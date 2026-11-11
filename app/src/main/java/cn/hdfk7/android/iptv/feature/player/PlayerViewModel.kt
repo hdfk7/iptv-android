@@ -29,6 +29,7 @@ import cn.hdfk7.android.iptv.app.IptvApplication
 import cn.hdfk7.android.iptv.core.model.SourceLibrary
 import cn.hdfk7.android.iptv.core.model.LibraryException
 import cn.hdfk7.android.iptv.core.data.repository.RefreshEngine
+import cn.hdfk7.android.iptv.core.data.repository.LibraryRules
 import cn.hdfk7.android.iptv.core.model.Channel
 import cn.hdfk7.android.iptv.core.model.LineQuality
 import kotlinx.coroutines.CoroutineScope
@@ -96,15 +97,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 if (playing != null && current != null) {
                     activeChannel = playing.copy(name = current.name, sourceName = current.sourceName)
-                    if (refreshed || playing.streams.toSet() != current.streams.toSet()) {
+                    if (refreshed || playing.responseTimesMs != current.responseTimesMs ||
+                        playing.streams.toSet() != current.streams.toSet()) {
                         val playingUrl = playing.streams.getOrNull(streamIndex)
-                        activeChannel = current
+                        val candidates = candidateStreams(current)
+                        activeChannel = current.copy(streams = candidates)
                         attemptedLines.retainAll(current.streams.toSet())
                         if (state.value.playback == PlaybackStatus.ERROR) {
                             streamIndex = current.streams.size
                             publishLineRanking()
                         } else if (playingUrl != null && playingUrl in current.streams) {
-                            streamIndex = current.streams.indexOf(playingUrl)
+                            streamIndex = candidates.indexOf(playingUrl)
                             publishLineRanking()
                             player?.let(block = { currentPlayer ->
                                 timeout?.cancel()
@@ -217,7 +220,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleCurrentFavorite() {
-        val channel = activeChannel ?: return
+        val id = activeChannel?.id ?: return
+        val channel = state.value.channels.firstOrNull(predicate = { entry -> entry.id == id }) ?: return
         toggleFavorite(channel)
     }
 
@@ -335,8 +339,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun selectProgram(channel: Channel, playing: Boolean): Unit {
-        val sorted = lineRanking.lines(channel.id, channel.streams)
+        val sorted = lineRanking.lines(channel.id, candidateStreams(channel))
         selectLine(channel.copy(streams = sorted.map(transform = { line -> line.url })), 0, playing)
+    }
+
+    private fun candidateStreams(channel: Channel): List<String> {
+        val domestic = channel.responseTimesMs.isNotEmpty() && state.value.sources.any(predicate = { source ->
+            source.id == channel.sourceId && LibraryRules.isDomestic(source)
+        })
+        return if (domestic) channel.streamsByResponseTime() else channel.streams
     }
 
     private fun selectLine(channel: Channel, index: Int, playing: Boolean = true) {

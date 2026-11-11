@@ -9,17 +9,22 @@ import java.net.URI
 import java.util.UUID
 
 object LibraryRules {
+    private const val DOMESTIC_SOURCE_ID = "best-fan"
     const val DEFAULT_URL = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
     const val MYIPTV_URL = "https://raw.githubusercontent.com/suxuang/myIPTV/main/ipv4.m3u"
     const val IPTV_ORG_URL = "https://iptv-org.github.io/iptv/index.m3u"
 
     fun defaults(): SourceLibrary {
         val sources = listOf(
-            PlaylistSource("best-fan", "国内精选", DEFAULT_URL),
+            PlaylistSource(DOMESTIC_SOURCE_ID, "国内精选", DEFAULT_URL),
             PlaylistSource("myiptv", "综合频道", MYIPTV_URL),
             PlaylistSource("iptv-org", "全球频道", IPTV_ORG_URL)
         )
         return SourceLibrary(sources, sources.first().id)
+    }
+
+    fun isDomestic(source: PlaylistSource): Boolean {
+        return source.id == DOMESTIC_SOURCE_ID && source.url == DEFAULT_URL
     }
 
     fun restoreDefaults(library: SourceLibrary): SourceLibrary {
@@ -116,7 +121,7 @@ object LibraryRules {
             if (library.sources.none(predicate = { source -> source.id == channel.sourceId })) {
                 throw LibraryException(LibraryError.MISSING)
             }
-            library.favorites + channel
+            library.favorites + channel.copy(responseTimesMs = emptyMap())
         }
         return library.copy(favorites = favorites)
     }
@@ -126,7 +131,7 @@ object LibraryRules {
         val favorites = library.favorites.map(transform = { favorite ->
             if (favorite.sourceId == source.id) {
                 val current = byKey[favorite.key]
-                current?.copy(sourceId = source.id, sourceName = source.name) ?: favorite
+                current?.copy(sourceId = source.id, sourceName = source.name, responseTimesMs = emptyMap()) ?: favorite
             } else {
                 favorite
             }

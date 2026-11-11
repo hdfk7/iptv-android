@@ -34,6 +34,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.R
+import cn.hdfk7.android.iptv.core.data.repository.LibraryRules
+import cn.hdfk7.android.iptv.core.model.DomesticChannelGroup
+import cn.hdfk7.android.iptv.core.model.groupDomesticChannels
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.BackdropBottom
@@ -64,6 +67,21 @@ internal fun CinemaPlayerScreen(
     val inputMode = LocalInputModeManager.current
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val hasChannels = state.channels.isNotEmpty()
+    val domestic = state.sources.any(predicate = { source -> source.id == state.activeSourceId && LibraryRules.isDomestic(source) })
+    val groups = remember(domestic, state.channels, calculation = {
+        if (domestic) groupDomesticChannels(state.channels) else emptyMap()
+    })
+    val availableGroups = remember(groups, calculation = {
+        groups.filterValues(predicate = { channels -> channels.isNotEmpty() }).keys.toList()
+    })
+    var selectedGroup by remember(state.activeSourceId, calculation = { mutableStateOf(DomesticChannelGroup.ALL) })
+    val activeGroup = selectedGroup.takeIf(predicate = { group -> group in availableGroups }) ?: DomesticChannelGroup.ALL
+    val displayChannel = if (domestic) {
+        state.channels.firstOrNull(predicate = { channel -> channel.id == state.selectedId })
+    } else {
+        null
+    }
+    val displayName = if (displayChannel != null) domesticDisplayName(displayChannel) else state.selectedName
     val visiblePanel = if (state.infoVisible) panel else TvPanel.Controls
     val showPanel: (TvPanel) -> Unit = { target ->
         returnToMore = target == TvPanel.More || (target == TvPanel.Controls && panel == TvPanel.More)
@@ -81,7 +99,7 @@ internal fun CinemaPlayerScreen(
     LaunchedEffect(dialogOpen, visiblePanel, block = {
         viewModel.holdInformation(dialogOpen || visiblePanel != TvPanel.Controls)
     })
-    LaunchedEffect(state.infoVisible, visiblePanel, dialogOpen, hasChannels, windowFocused, television, block = {
+    LaunchedEffect(state.infoVisible, visiblePanel, dialogOpen, hasChannels, windowFocused, television, activeGroup, block = {
         if (!television || dialogOpen || !windowFocused) {
             return@LaunchedEffect
         }
@@ -112,6 +130,16 @@ internal fun CinemaPlayerScreen(
         }
         if (state.infoVisible) {
             viewModel.showInformation()
+        }
+        if (visiblePanel == TvPanel.Channels && availableGroups.size > 1 &&
+            (key.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || key.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            opener = key.keyCode
+            if (key.repeatCount == 0) {
+                val direction = if (key.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+                val index = Math.floorMod(availableGroups.indexOf(activeGroup) + direction, availableGroups.size)
+                selectedGroup = availableGroups[index]
+            }
+            return@onPreviewKeyEvent true
         }
         when (key.keyCode) {
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO -> {
@@ -189,6 +217,7 @@ internal fun CinemaPlayerScreen(
                 .background(Brush.verticalGradient(listOf(Color.Transparent, BackdropBottom.copy(alpha = 0.88f)))))
             CinemaControls(
                 state = state,
+                displayName = displayName,
                 viewModel = viewModel,
                 channelsFocus = channelsFocus,
                 moreFocus = moreFocus,
@@ -201,32 +230,40 @@ internal fun CinemaPlayerScreen(
             )
             when (visiblePanel) {
                 TvPanel.Controls -> Unit
-                TvPanel.Channels -> ChannelPanel(
-                    state = state,
-                    onSelect = viewModel::select,
-                    modifier = if (portrait) {
-                        Modifier.align(Alignment.BottomCenter).then(controlInsets).padding(start = inset, end = inset, bottom = 116.dp)
-                            .fillMaxWidth().fillMaxHeight(0.46f)
-                    } else {
-                        Modifier.align(Alignment.TopStart).then(controlInsets).padding(start = inset, top = 24.dp, bottom = if (television) 86.dp else 76.dp)
-                            .width(minOf(248.dp, maxWidth * 0.40f)).fillMaxHeight()
-                    },
-                    compact = true,
-                    television = television,
-                    requestInitialFocus = false,
-                    onInitialFocus = {},
-                    selectedRowFocus = selectedRowFocus,
-                    videoFocus = surfaceFocus,
-                    onConfirmSelect = {
-                        panel = TvPanel.Controls
-                        viewModel.hideInformation()
-                    },
-                    onRight = { channelsFocus.requestFocus() },
-                    onLeftToHeader = { channelsFocus.requestFocus() },
-                    onTopBoundary = { channelsFocus.requestFocus() },
-                    onBottomBoundary = { channelsFocus.requestFocus() },
-                    cinema = true
-                )
+                TvPanel.Channels -> key(state.activeSourceId, activeGroup, block = {
+                    ChannelPanel(
+                        state = state.copy(channels = groups[activeGroup] ?: state.channels),
+                        onSelect = viewModel::select,
+                        modifier = if (portrait) {
+                            Modifier.align(Alignment.BottomCenter).then(controlInsets).padding(start = inset, end = inset, bottom = 116.dp)
+                                .fillMaxWidth().fillMaxHeight(0.46f)
+                        } else {
+                            Modifier.align(Alignment.TopStart).then(controlInsets).padding(start = inset, top = 24.dp, bottom = if (television) 86.dp else 76.dp)
+                                .width(minOf(248.dp, maxWidth * 0.40f)).fillMaxHeight()
+                        },
+                        compact = true,
+                        television = television,
+                        requestInitialFocus = false,
+                        onInitialFocus = {},
+                        selectedRowFocus = selectedRowFocus,
+                        videoFocus = surfaceFocus,
+                        onConfirmSelect = {
+                            panel = TvPanel.Controls
+                            viewModel.hideInformation()
+                        },
+                        onRight = { channelsFocus.requestFocus() },
+                        onLeftToHeader = { channelsFocus.requestFocus() },
+                        onTopBoundary = { channelsFocus.requestFocus() },
+                        onBottomBoundary = { channelsFocus.requestFocus() },
+                        cinema = true,
+                        domestic = domestic,
+                        groupControls = {
+                            if (availableGroups.size > 1) {
+                                DomesticChannelControls(availableGroups, activeGroup, television, onSelect = { group -> selectedGroup = group })
+                            }
+                        }
+                    )
+                })
                 TvPanel.More -> CinemaMoreMenu(
                     state = state,
                     viewModel = viewModel,
@@ -253,6 +290,7 @@ internal fun CinemaPlayerScreen(
 @Composable
 private fun CinemaControls(
     state: PlayerState,
+    displayName: String?,
     viewModel: PlayerViewModel,
     channelsFocus: FocusRequester,
     moreFocus: FocusRequester,
@@ -263,7 +301,7 @@ private fun CinemaControls(
 ): Unit {
     val channelName: @Composable (Modifier) -> Unit = { nameModifier ->
         Column(modifier = nameModifier, verticalArrangement = Arrangement.spacedBy(2.dp), content = {
-            Text(text = state.selectedName ?: stringResource(R.string.choose_channel), color = Accent,
+            Text(text = displayName ?: stringResource(R.string.choose_channel), color = Accent,
                 fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!state.selectedSourceName.isNullOrBlank()) {
                 Text(text = state.selectedSourceName, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -38,13 +38,13 @@ private suspend fun readAppRelease(address: String): AppRelease {
     if (manifestUrl == null || !manifestUrl.isHttps || manifestUrl.username.isNotEmpty() || manifestUrl.password.isNotEmpty()) {
         throw AppUpdateDownloadException(R.string.app_update_manifest_invalid)
     }
-    val body = withTimeout(timeMillis = 20_000L, block = { downloadUpdateManifest(manifestUrl.toString()) })
+    val downloaded = withTimeout(timeMillis = 20_000L, block = { downloadUpdateManifest(manifestUrl.toString()) })
     try {
-        val manifest = JSONObject(body)
+        val manifest = JSONObject(downloaded.body)
         val versionCode = manifest.get("versionCode") as? Int ?: error("Expected an integer versionCode")
         val versionName = manifest.getString("versionName")
-        val downloadUrl = requireNotNull(manifestUrl.resolve(manifest.getString("apkUrl")))
-        require(versionCode > 0 && versionName.isNotBlank() && downloadUrl.isHttps && downloadUrl != manifestUrl &&
+        val downloadUrl = requireNotNull(downloaded.url.resolve(manifest.getString("apkUrl")))
+        require(versionCode > 0 && versionName.isNotBlank() && downloadUrl.isHttps && downloadUrl != downloaded.url && downloadUrl != manifestUrl &&
             downloadUrl.username.isEmpty() && downloadUrl.password.isEmpty())
         val notes = (manifest.opt("releaseNotes") as? String).orEmpty().trim().take(600)
         return AppRelease(versionCode, versionName, downloadUrl.toString(), notes)

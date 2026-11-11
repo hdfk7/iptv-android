@@ -23,7 +23,17 @@ class FilePlaylistStore(directory: File, name: String) : PlaylistStore {
             val channels = (0 until array.length()).map(transform = { index ->
                 val entry = array.getJSONObject(index)
                 val urls = entry.getJSONArray("streams")
-                Channel(entry.getString("name"), entry.getString("group"), (0 until urls.length()).map(transform = { urlIndex -> urls.getString(urlIndex) }))
+                val streams = (0 until urls.length()).map(transform = { urlIndex -> urls.getString(urlIndex) })
+                val hints = entry.optJSONObject("responseTimesMs")
+                val timings = if (hints == null) {
+                    emptyMap()
+                } else {
+                    streams.mapNotNull(transform = { url ->
+                        val time = hints.optInt(url)
+                        if (time in 1..60_000) url to time else null
+                    }).toMap()
+                }
+                Channel(entry.getString("name"), entry.getString("group"), streams, responseTimesMs = timings)
             })
             PlaylistSnapshot(channels, json.getLong("updatedAt"))
         }).getOrNull()
@@ -32,7 +42,11 @@ class FilePlaylistStore(directory: File, name: String) : PlaylistStore {
     override fun write(snapshot: PlaylistSnapshot) {
         val array = JSONArray()
         for (channel in snapshot.channels) {
-            array.put(JSONObject().put("name", channel.name).put("group", channel.group).put("streams", JSONArray(channel.streams)))
+            val entry = JSONObject().put("name", channel.name).put("group", channel.group).put("streams", JSONArray(channel.streams))
+            if (channel.responseTimesMs.isNotEmpty()) {
+                entry.put("responseTimesMs", JSONObject(channel.responseTimesMs))
+            }
+            array.put(entry)
         }
         val data = JSONObject().put("updatedAt", snapshot.updatedAt).put("channels", array).toString().toByteArray(Charsets.UTF_8)
         synchronized(lock = fileLock, block = {

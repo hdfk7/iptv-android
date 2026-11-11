@@ -76,17 +76,34 @@ if /i not "%APK_URL%"=="%APK_NAME%" (
 echo -- version: versionCode=%VERSION_CODE% versionName=%VERSION_NAME%
 echo -- target : %TARGET%:%REMOTE_DIR%
 
-scp -o BatchMode=yes "%APK%" "%MANIFEST%" "%TARGET%:%REMOTE_DIR%/"
+set "STAGED_APK=.%APK_NAME%.upload"
+set "STAGED_MANIFEST=.latest-%APK_NAME%.upload"
+scp -o BatchMode=yes "%APK%" "%TARGET%:%REMOTE_DIR%/%STAGED_APK%"
 if errorlevel 1 (
-    echo [error] scp upload failed
+    echo [error] APK upload failed
+    exit /b 1
+)
+scp -o BatchMode=yes "%MANIFEST%" "%TARGET%:%REMOTE_DIR%/%STAGED_MANIFEST%"
+if errorlevel 1 (
+    echo [error] manifest upload failed
+    exit /b 1
+)
+ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && test -s '%STAGED_APK%' && test -s '%STAGED_MANIFEST%' && mv -f -- '%STAGED_APK%' '%APK_NAME%' && mv -f -- '%STAGED_MANIFEST%' latest.json"
+if errorlevel 1 (
+    echo [error] could not activate release
     exit /b 1
 )
 
 echo -- remove older APKs
-ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' ; ls IPTV-release-*.apk 2>/dev/null | grep -v '%APK_NAME%' | xargs -r rm -f"
+ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && find . -maxdepth 1 -type f -name 'IPTV-release-*.apk' -not -name '%APK_NAME%' -delete"
+if errorlevel 1 (
+    echo [error] release published but cleanup failed
+    exit /b 1
+)
 
 echo -- files on server
 ssh -o BatchMode=yes "%TARGET%" "ls -lh '%REMOTE_DIR%/%APK_NAME%' '%REMOTE_DIR%/latest.json'"
+if errorlevel 1 exit /b 1
 
 echo -- done
 echo    %PUBLIC_BASE%/%APK_NAME%

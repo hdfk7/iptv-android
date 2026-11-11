@@ -105,6 +105,31 @@
     <string name="app_update_close_short">关闭</string>
     <string name="settings_title">设置</string>
     <string name="tv_channels">频道</string>
+    <string name="domestic_group_all">全部</string>
+    <string name="domestic_group_cctv">央视</string>
+    <string name="domestic_group_satellite">卫视</string>
+    <string name="domestic_group_other">其他</string>
+    <string name="domestic_cctv_name">%1$s %2$s</string>
+    <string name="domestic_cctv5_plus">CCTV5+ 体育赛事</string>
+    <string-array name="domestic_cctv_names">
+        <item>综合</item>
+        <item>财经</item>
+        <item>综艺</item>
+        <item>中文国际</item>
+        <item>体育</item>
+        <item>电影</item>
+        <item>国防军事</item>
+        <item>电视剧</item>
+        <item>纪录</item>
+        <item>科教</item>
+        <item>戏曲</item>
+        <item>社会与法</item>
+        <item>新闻</item>
+        <item>少儿</item>
+        <item>音乐</item>
+        <item>奥林匹克</item>
+        <item>农业农村</item>
+    </string-array>
     <string name="tv_more">更多</string>
     <string name="tv_line_status">线路 %1$d / %2$d</string>
     <string name="settings_close">关闭设置</string>

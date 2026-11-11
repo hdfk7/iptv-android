@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -21,7 +22,9 @@ private val progressInterval = TimeUnit.MILLISECONDS.toNanos(120)
 private val updateClient = OkHttpClient.Builder().followSslRedirects(false).readTimeout(3, TimeUnit.MINUTES).build()
 private const val MAX_APK_BYTES = 256L * 1024 * 1024
 
-internal suspend fun downloadUpdateManifest(address: String): String = suspendCancellableCoroutine(block = { continuation ->
+internal data class DownloadedUpdateManifest(val url: HttpUrl, val body: String)
+
+internal suspend fun downloadUpdateManifest(address: String): DownloadedUpdateManifest = suspendCancellableCoroutine(block = { continuation ->
     val call = updateClient.newCall(Request.Builder().url(address).build())
     continuation.invokeOnCancellation(handler = { call.cancel() })
     call.enqueue(object : Callback {
@@ -41,7 +44,7 @@ internal suspend fun downloadUpdateManifest(address: String): String = suspendCa
                     if (source.buffer.size > 65_536L) {
                         throw AppUpdateDownloadException(R.string.app_update_manifest_invalid)
                     }
-                    source.readUtf8()
+                    DownloadedUpdateManifest(reply.request.url, source.readUtf8())
                 })
             })
             continuation.resumeWith(result)
@@ -147,18 +150,15 @@ internal suspend fun downloadApk(context: Context, release: AppRelease, onProgre
                             }
                             @Suppress("DEPRECATION")
                             val archiveSigners = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                val signing = archive.signingInfo
-                                if (signing?.hasMultipleSigners() == true) {
-                                    signing.apkContentsSigners
-                                } else {
-                                    signing?.signingCertificateHistory
-                                }
+                                archive.signingInfo?.apkContentsSigners
                             } else {
                                 archive.signatures
                             }
+                            val rotatedSigner = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                                installedSigners?.size == 1 && archiveSigners?.size == 1 &&
+                                archive.signingInfo?.signingCertificateHistory?.contains(installedSigners.single()) == true
                             val signatureMatches = !installedSigners.isNullOrEmpty() && !archiveSigners.isNullOrEmpty() &&
-                                installedSigners.all(predicate = { signer -> archiveSigners.contains(signer) }) &&
-                                (installedSigners.size == 1 || installedSigners.toSet() == archiveSigners.toSet())
+                                (installedSigners.toSet() == archiveSigners.toSet() || rotatedSigner)
                             if (!signatureMatches) {
                                 throw AppUpdateDownloadException(R.string.app_update_signature_mismatch)
                             }

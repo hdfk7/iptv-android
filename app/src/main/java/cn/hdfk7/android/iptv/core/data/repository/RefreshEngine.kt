@@ -14,10 +14,10 @@ interface PlaylistStore {
 }
 
 class RefreshEngine(private val store: PlaylistStore, private val download: suspend (String) -> String, private val clock: () -> Long) {
-    suspend fun refresh(sourceUrl: String = SOURCE_URL): RefreshResult {
+    suspend fun refresh(sourceUrl: String = SOURCE_URL, readResponseTime: Boolean = false): RefreshResult {
         val cached = store.read()
         try {
-            val channels = PlaylistParser().parse(download(sourceUrl), sourceUrl)
+            val channels = PlaylistParser().parse(download(sourceUrl), sourceUrl, readResponseTime)
             if (channels.isEmpty()) {
                 throw IOException("Empty channel catalog")
             }

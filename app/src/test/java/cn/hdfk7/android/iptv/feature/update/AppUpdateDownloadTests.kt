@@ -4,8 +4,11 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetSocketAddress
 import cn.hdfk7.android.iptv.R
+import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -13,6 +16,31 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class AppUpdateDownloadTests {
+    @Test
+    fun redirectedManifestReportsTheFinalUrlForRelativeApks(): Unit = runBlocking(block = {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/latest.json", { exchange ->
+            exchange.responseHeaders.add("Location", "/releases/latest.json")
+            exchange.sendResponseHeaders(302, -1)
+            exchange.close()
+        })
+        val manifest = """{"apkUrl":"iptv.apk"}"""
+        server.createContext("/releases/latest.json", { exchange ->
+            val bytes = manifest.toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use(block = { body -> body.write(bytes) })
+        })
+        server.start()
+        try {
+            val base = "http://127.0.0.1:${server.address.port}"
+            val downloaded = downloadUpdateManifest("$base/latest.json")
+            assertEquals(manifest, downloaded.body)
+            assertEquals("$base/releases/iptv.apk", downloaded.url.resolve("iptv.apk").toString())
+        } finally {
+            server.stop(0)
+        }
+    })
+
     @Test
     fun reportsCompletionForKnownAndUnknownLengths() {
         val data = byteArrayOf(1, 2, 3)

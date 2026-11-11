@@ -75,7 +75,7 @@ class ChannelListFocus(val memory: ChannelFocusMemory) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null, cinema: Boolean = false) {
+fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null, cinema: Boolean = false, domestic: Boolean = false, groupControls: @Composable () -> Unit = {}) {
     val favorites = state.activeSourceId == SourceLibrary.FAVORITES_ID
     val selectedIndex = remember(state.channels, state.selectedId, calculation = {
         state.channels.indexOfFirst(predicate = { channel -> channel.id == state.selectedId })
@@ -84,7 +84,7 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
     val scope = rememberCoroutineScope()
     var focusSelection by remember(calculation = { mutableStateOf<Job?>(null) })
     var pendingChannel by remember(calculation = { mutableStateOf<Channel?>(null) })
-    var focusedIndex by remember(calculation = { mutableIntStateOf(-1) })
+    var focusedChannelId by remember(calculation = { mutableStateOf<String?>(null) })
     var pendingFocusMove by remember(calculation = { mutableStateOf<Job?>(null) })
     val reveal: suspend (Channel?) -> Unit = { target ->
         if (target != null) {
@@ -158,6 +158,7 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
             if (state.refreshFailed || state.message != null) {
                 CatalogMessage(state = state)
             }
+            groupControls()
             if (state.channels.isEmpty()) {
                 Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally, content = {
                     Icon(painter = painterResource(if (favorites) R.drawable.ic_star else R.drawable.ic_source), contentDescription = null, tint = if (favorites) Gold else Muted, modifier = Modifier.size(36.dp))
@@ -170,7 +171,7 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
                         listHasFocus = focus.hasFocus
                         if (!focus.hasFocus) {
                             enteringList = true
-                            focusedIndex = -1
+                            focusedChannelId = null
                             if (pendingFocusMove?.isActive != true) {
                                 pendingChannel?.let(block = commitChannel)
                             }
@@ -184,6 +185,7 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
                             Key.DirectionDown -> 1
                             else -> return@onPreviewKeyEvent false
                         }
+                        val focusedIndex = state.channels.indexOfFirst(predicate = { channel -> channel.id == focusedChannelId })
                         if (focusedIndex < 0) {
                             return@onPreviewKeyEvent false
                         }
@@ -216,8 +218,9 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
                         true
                     }), verticalArrangement = Arrangement.spacedBy(if (cinema) 2.dp else 6.dp), content = {
                         itemsIndexed(items = state.channels, key = { _, channel -> channel.id }, itemContent = { index, channel ->
-                            ChannelRow(channel = channel, index = index, television = television, cinema = cinema, selected = { channel.id == state.selectedId && (cinema || (focusedIndex < 0 && !listHasFocus)) }, highlighted = { focusedIndex == index }, showSource = favorites, requestFocus = requestInitialFocus && index == 0, selectedRowFocus = selectedRowFocus, onInitialFocus = onInitialFocus, onVideoFocus = { if (!cinema) { commitChannel(channel) }; if (onRight != null) { onRight() } else { videoFocus.requestFocus() } }, onLeftToHeader = onLeftToHeader, onFocused = {
-                                focusedIndex = index
+                            val displayName = if (domestic) domesticDisplayName(channel) else channel.name
+                            ChannelRow(channel = channel, displayName = displayName, index = index, television = television, cinema = cinema, selected = { channel.id == state.selectedId && (cinema || (focusedChannelId == null && !listHasFocus)) }, highlighted = { focusedChannelId == channel.id }, showSource = favorites, requestFocus = requestInitialFocus && index == 0, selectedRowFocus = selectedRowFocus, onInitialFocus = onInitialFocus, onVideoFocus = { if (!cinema) { commitChannel(channel) }; if (onRight != null) { onRight() } else { videoFocus.requestFocus() } }, onLeftToHeader = onLeftToHeader, onFocused = {
+                                focusedChannelId = channel.id
                                 if (cinema || enteringList) {
                                     enteringList = false
                                 } else {
@@ -274,7 +277,7 @@ private suspend fun LazyListState.revealItem(index: Int) {
 }
 
 @Composable
-private fun ChannelRow(channel: Channel, index: Int, television: Boolean, cinema: Boolean, selected: () -> Boolean, highlighted: () -> Boolean, showSource: Boolean, requestFocus: Boolean, selectedRowFocus: ChannelListFocus, onInitialFocus: () -> Unit, onVideoFocus: () -> Unit, onLeftToHeader: (() -> Unit)?, onFocused: () -> Unit, onSelect: () -> Unit) {
+private fun ChannelRow(channel: Channel, displayName: String, index: Int, television: Boolean, cinema: Boolean, selected: () -> Boolean, highlighted: () -> Boolean, showSource: Boolean, requestFocus: Boolean, selectedRowFocus: ChannelListFocus, onInitialFocus: () -> Unit, onVideoFocus: () -> Unit, onLeftToHeader: (() -> Unit)?, onFocused: () -> Unit, onSelect: () -> Unit) {
     val categoryLabel = remember(channel, calculation = {
         when (ChannelCategory.classify(channel)) {
             ChannelCategory.CCTV -> R.string.channel_category_cctv
@@ -355,7 +358,7 @@ private fun ChannelRow(channel: Channel, index: Int, television: Boolean, cinema
             val playing = selected()
             Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, modifier = Modifier.width(if (television) 34.dp else 28.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
-                Text(text = channel.name, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(text = displayName, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (!cinema) {
                     Text(text = if (showSource) channel.sourceName else stringResource(categoryLabel), color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, fontSize = if (television) 12.sp else 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

@@ -5,6 +5,30 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class PlaylistParserTests {
+    @Test
+    fun usesValidResponseTimesOnlyWhenRequested(): Unit {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 response-time="120ms",CCTV1
+            slow.m3u8
+            #EXTINF:-1 response-time="0ms",CCTV1
+            unknown.m3u8
+            #EXTINF:-1 response-time="45ms",CCTV-1
+            fast.m3u8
+            #EXTINF:-1 response-time="45ms",CCTV1
+            tied.m3u8
+            #EXTINF:-1 response-time="1ms",CCTV1
+            slow.m3u8
+        """.trimIndent()
+        val url = "https://example.org/list.m3u"
+        val parser = PlaylistParser()
+        val original = parser.parse(playlist, url).single().streams
+        val measured = parser.parse(playlist, url, readResponseTime = true).single()
+        assertEquals(listOf("slow", "unknown", "fast", "tied"), original.map(transform = { line -> line.substringAfterLast('/').substringBefore('.') }))
+        assertEquals(original, measured.streams)
+        assertEquals(listOf(original[2], original[3], original[0], original[1]), measured.streamsByResponseTime())
+    }
+
     private val parser = PlaylistParser()
     private val base = "https://example.org/catalog/list.m3u8"
 

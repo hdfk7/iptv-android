@@ -149,7 +149,8 @@ class PlaylistRepository(
                 return@withLock false
             }
             try {
-                val result = RefreshEngine(playlistStores(source), download, clock).refresh(source.url)
+                val result = RefreshEngine(playlistStores(source), download, clock)
+                    .refresh(source.url, readResponseTime = LibraryRules.isDomestic(source))
                 mutex.withLock(action = {
                     val currentSource = library.sources.firstOrNull(predicate = { current -> current.id == source.id && current.url == source.url })
                     if (currentSource != null) {

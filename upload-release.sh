@@ -52,10 +52,14 @@ fi
 echo "==> 版本: versionCode=$VERSION_CODE versionName=$VERSION_NAME"
 echo "==> 目标: $SERVER:$REMOTE_DIR"
 
-scp -o BatchMode=yes "$APK" "$MANIFEST" "$SERVER:$REMOTE_DIR/"
+STAGED_APK=".$APK_NAME.upload"
+STAGED_MANIFEST=".latest-$APK_NAME.upload"
+scp -o BatchMode=yes "$APK" "$SERVER:$REMOTE_DIR/$STAGED_APK"
+scp -o BatchMode=yes "$MANIFEST" "$SERVER:$REMOTE_DIR/$STAGED_MANIFEST"
+ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && test -s '$STAGED_APK' && test -s '$STAGED_MANIFEST' && mv -f -- '$STAGED_APK' '$APK_NAME' && mv -f -- '$STAGED_MANIFEST' latest.json"
 
 echo "==> 清理其它版本 APK"
-ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && ls IPTV-release-*.apk 2>/dev/null | grep -v '$APK_NAME' | xargs -r rm -f"
+ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && find . -maxdepth 1 -type f -name 'IPTV-release-*.apk' -not -name '$APK_NAME' -delete"
 
 echo "==> 服务器上的文件"
 ssh -o BatchMode=yes "$SERVER" "ls -lh '$REMOTE_DIR/$APK_NAME' '$REMOTE_DIR/latest.json'"

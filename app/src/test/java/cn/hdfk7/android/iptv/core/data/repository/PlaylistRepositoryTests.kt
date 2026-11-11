@@ -15,6 +15,33 @@ class PlaylistRepositoryTests {
     private val initial = SourceLibrary(listOf(first, second), first.id)
 
     @Test
+    fun domesticTimingsDoNotLeakIntoFavoritesOrAnEditedSource(): Unit = runBlocking(block = {
+        val domestic = LibraryRules.defaults().sources.first().copy(name = "我的直播")
+        val storage = MemoryLibrary(SourceLibrary(listOf(domestic, second), domestic.id))
+        val stores = mutableMapOf<String, MemoryPlaylist>()
+        val body = "#EXTM3U\n#EXTINF:-1 response-time=\"300ms\",CCTV1\nhttps://example.org/a\n" +
+            "#EXTINF:-1 response-time=\"20ms\",CCTV1\nhttps://example.org/b"
+        val repository = repository(storage, stores, { _ -> body })
+        repository.refresh()
+        val channel = repository.state.value.channels.single()
+        assertEquals(listOf("https://example.org/a", "https://example.org/b"), channel.streams)
+        assertEquals(channel.streams.reversed(), channel.streamsByResponseTime())
+        val restarted = repository(storage, stores, { _ -> body })
+        restarted.initialize()
+        assertEquals(channel.responseTimesMs, restarted.state.value.channels.single().responseTimesMs)
+        repository.toggleFavorite(channel)
+        repository.activate(SourceLibrary.FAVORITES_ID)
+        repository.refresh()
+        assertEquals(channel.streams, repository.state.value.channels.single().streams)
+        assertTrue(repository.state.value.channels.single().responseTimesMs.isEmpty())
+        repository.activate(domestic.id)
+        repository.saveSource(domestic.id, domestic.name, "https://example.org/edited.m3u")
+        repository.refresh()
+        assertEquals(channel.streams, repository.state.value.channels.single().streams)
+        assertTrue(repository.state.value.channels.single().responseTimesMs.isEmpty())
+    })
+
+    @Test
     fun sourceSelectionStaysIsolatedAndRestartSelectsFirstSource() {
         runBlocking(block = {
             val storage = MemoryLibrary(initial)

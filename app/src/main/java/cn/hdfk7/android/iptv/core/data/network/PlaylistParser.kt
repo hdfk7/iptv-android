@@ -6,19 +6,21 @@ import java.net.URI
 
 /** Extended M3U channel catalog; HLS manifests are media, not channel catalogs. */
 class PlaylistParser {
-    private data class Entry(val name: String, var group: String, val urls: MutableSet<String> = linkedSetOf())
+    private data class Entry(val name: String, var group: String, val urls: MutableMap<String, Int?> = linkedMapOf())
 
     private val header = Regex("""#EXTM3U(?:\s.*)?""")
     private val tvgName = Regex("""(?:^|\s)tvg-name="([^"]*)"""")
     private val groupTitle = Regex("""(?:^|\s)group-title="([^"]*)"""")
+    private val responseTime = Regex("""(?:^|\s)response-time="([0-9]{1,5})ms"""")
 
-    fun parse(text: String, sourceUrl: String): List<Channel> {
+    fun parse(text: String, sourceUrl: String, readResponseTime: Boolean = false): List<Channel> {
         val lines = text.removePrefix("\uFEFF").lineSequence().iterator()
         require(value = lines.hasNext() && header.matches(lines.next().trim()), lazyMessage = { "Expected an extended M3U catalog" })
         val base = URI(sourceUrl)
         val channels = linkedMapOf<String, Entry>()
         var name: String? = null
         var group = ""
+        var latency: Int? = null
         for (rawLine in lines) {
             val line = rawLine.trim()
             require(value = !line.startsWith("#EXT-X-"), lazyMessage = { "HLS media manifests are not channel catalogs" })
@@ -30,6 +32,11 @@ class PlaylistParser {
                     null
                 }
                 group = attribute(line, groupTitle)
+                latency = if (readResponseTime && separator >= 0) {
+                    attribute(line.substring(0, separator), responseTime).toIntOrNull()?.takeIf(predicate = { time -> time in 1..60_000 })
+                } else {
+                    null
+                }
             } else if (line.isNotBlank() && !line.startsWith("#")) {
                 val channelName = name
                 name = null
@@ -43,11 +50,17 @@ class PlaylistParser {
                     if (entry.group.isBlank()) {
                         entry.group = group
                     }
-                    entry.urls.add(uri.toString())
+                    val url = uri.toString()
+                    if (entry.urls[url] == null) {
+                        entry.urls[url] = latency
+                    }
                 }
             }
         }
-        return channels.values.map(transform = { entry -> Channel(entry.name, entry.group, entry.urls.toList()) })
+        return channels.values.map(transform = { entry ->
+            val timings = entry.urls.entries.mapNotNull(transform = { line -> line.value?.let(block = { time -> line.key to time }) }).toMap()
+            Channel(entry.name, entry.group, entry.urls.keys.toList(), responseTimesMs = timings)
+        })
     }
 
     private fun attribute(line: String, pattern: Regex): String {
