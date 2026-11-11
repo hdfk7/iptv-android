@@ -82,16 +82,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         readHistory = { program, url -> history.read(history.key(historyScope, program, url)) },
         writeHistory = { program, url, quality -> history.write(history.key(historyScope, program, url), quality) }
     )
-    private var waitForChannelSelection = false
     private var resumePending = viewing.getBoolean("resume", false)
+    private var autoPlayPending = resumePending
     var resumeEnabled: Boolean by mutableStateOf(resumePending)
         private set
 
     fun toggleResume(): Unit {
         resumeEnabled = !resumeEnabled
         viewing.edit().putBoolean("resume", resumeEnabled).apply()
-        if (!resumeEnabled) {
+        if (!resumeEnabled && resumePending) {
             resumePending = false
+            autoPlayPending = false
         }
     }
 
@@ -138,7 +139,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val selectionRemoved = catalog.loaded && activeChannel != null &&
                     catalog.channels.none(predicate = { channel -> channel.id == activeChannel?.id })
                 if (switched || selectionRemoved) {
-                    waitForChannelSelection = false
+                    resumePending = false
+                    autoPlayPending = switched || wantsPlayback
                     clearSelection()
                 }
                 val playing = activeChannel
@@ -197,17 +199,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (catalog.loaded) {
                     catalogToken = token
                 }
-                if (catalog.channels.isNotEmpty() && activeChannel == null && !waitForChannelSelection) {
+                if (catalog.channels.isNotEmpty() && activeChannel == null && autoPlayPending) {
                     val remembered = if (resumePending) {
                         viewing.getString("channel:${catalog.library.activeSourceId}", null)
                     } else {
                         null
                     }
                     resumePending = false
+                    autoPlayPending = false
                     val restored = catalog.channels.firstOrNull(predicate = { channel -> channel.id == remembered })
-                    if (remembered != null && restored == null) {
-                        waitForChannelSelection = true
-                    } else {
+                    if (remembered == null || restored != null) {
                         select(channel = restored ?: catalog.channels.first())
                     }
                 }
@@ -524,7 +525,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun selectProgram(channel: Channel, playing: Boolean): Unit {
         updateHistoryScope()
-        waitForChannelSelection = false
+        resumePending = false
+        autoPlayPending = false
         val preference = "channel:${channel.sourceId}"
         if (viewing.getString(preference, null) != channel.id) {
             viewing.edit().putString(preference, channel.id).apply()

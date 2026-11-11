@@ -330,12 +330,14 @@ private fun CinemaControls(
                 val actionWidth = if (portrait) Modifier.weight(1f) else Modifier
                 CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels,
                     modifier = actionWidth.focusRequester(channelsFocus), interactive = controlsFocusable)
-                if (state.selectedId != null) {
+                if (state.channels.isNotEmpty()) {
                     val playing = state.playback == PlaybackStatus.PLAYING
-                    val favorite = state.selectedId in state.favoriteIds
                     CinemaAction(label = stringResource(if (playing) R.string.pause else R.string.play),
                         icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = viewModel::togglePlayback,
                         modifier = actionWidth, interactive = controlsFocusable)
+                }
+                if (state.selectedId != null) {
+                    val favorite = state.selectedId in state.favoriteIds
                     CinemaAction(label = stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add),
                         icon = if (favorite) R.drawable.ic_star_filled else R.drawable.ic_star,
                         tint = if (favorite) Gold else Accent, onClick = viewModel::toggleCurrentFavorite,

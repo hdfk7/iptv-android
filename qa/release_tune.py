@@ -31,16 +31,20 @@ def measure(serial, rounds, timeout):
     def events():
         return EVENT.findall(adb("logcat", "-d", "--pid", pid, "-s", TAG))
 
-    def wait_for_tune(after):
+    def wait_for_tune(after, request_play=False):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             for latency, first_line, tune_id, failed_id in events():
                 if int(tune_id or failed_id) > after:
                     return int(tune_id or failed_id), int(latency) if latency else None, first_line == "true"
-            time.sleep(0.3)
+            if request_play:
+                adb("shell", "input", "keyevent", "KEYCODE_MEDIA_PLAY")
+                time.sleep(1)
+            else:
+                time.sleep(0.3)
         return None
 
-    startup = wait_for_tune(-1)
+    startup = wait_for_tune(-1, request_play=True)
     assert startup is not None and startup[1] is not None, (
         "Initial channel did not render or APP_DEBUG_SWITCH is disabled in this Release build"
     )
