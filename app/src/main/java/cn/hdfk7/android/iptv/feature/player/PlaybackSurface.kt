@@ -42,7 +42,11 @@ internal fun PlaybackSurface(
                 }
             }
             else -> Column(
-                modifier = Modifier.fillMaxSize().background(Brush.radialGradient(listOf(PanelAlt, BackdropBottom))),
+                modifier = if (state.previewFrameVisible) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier.fillMaxSize().background(Brush.radialGradient(listOf(PanelAlt, BackdropBottom)))
+                },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
                 content = {
@@ -61,7 +65,8 @@ internal fun PlaybackSurface(
                         }
                         Box(
                             modifier = Modifier.size(60.dp).clip(CircleShape).then(playAction)
-                                .background(Color.White.copy(alpha = 0.05f), CircleShape)
+                                .background(if (state.previewFrameVisible) Color.Black.copy(alpha = 0.6f)
+                                    else Color.White.copy(alpha = 0.05f), CircleShape)
                                 .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape),
                             contentAlignment = Alignment.Center,
                             content = {

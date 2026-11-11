@@ -23,6 +23,7 @@ data class PlayerState(
     val updatedAt: Long? = null,
     val stale: Boolean = false,
     val playback: PlaybackStatus = PlaybackStatus.IDLE,
+    val previewFrameVisible: Boolean = false,
     val line: Int = 0,
     val lineCount: Int = 0,
     val lines: List<PlaybackLine> = emptyList(),
