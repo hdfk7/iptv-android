@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,11 +72,14 @@ private fun SourceList(state: SourceManagerState, library: SourceLibrary, viewMo
         val index = library.sources.indexOfFirst(predicate = { source -> source.id == library.activeSourceId })
         if (library.activeSourceId == SourceLibrary.FAVORITES_ID || index < 0) 0 else index + 1
     }
-    LaunchedEffect(key1 = Unit, block = {
-        inputMode.requestInputMode(InputMode.Keyboard)
-        runCatching(block = { listState.scrollToItem(activeIndex) })
-        withFrameNanos(onFrame = { })
-        runCatching(block = { initialFocus.requestFocus() })
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(windowFocused, activeIndex, block = {
+        if (windowFocused) {
+            inputMode.requestInputMode(InputMode.Keyboard)
+            listState.scrollToItem(activeIndex)
+            withFrameNanos(onFrame = { _ -> })
+            initialFocus.requestFocus()
+        }
     })
     Column(modifier = Modifier.height(408.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = {
         DialogHeader(title = stringResource(R.string.library_title), onClose = viewModel::back)
@@ -127,7 +131,14 @@ private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerView
     val inputMode = LocalInputModeManager.current
     val draft = state.draft ?: return
     val nameFocus = remember(calculation = { FocusRequester() })
-    LaunchedEffect(key1 = draft.id, block = { inputMode.requestInputMode(InputMode.Keyboard); nameFocus.requestFocus() })
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(draft.id, windowFocused, block = {
+        if (windowFocused) {
+            inputMode.requestInputMode(InputMode.Keyboard)
+            withFrameNanos(onFrame = { _ -> })
+            nameFocus.requestFocus()
+        }
+    })
     Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp), content = {
         DialogHeader(title = stringResource(if (draft.id == null) R.string.source_add else R.string.source_edit), onClose = viewModel::back)
         OutlinedTextField(value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, enabled = !state.busy, modifier = Modifier.fillMaxWidth().focusRequester(nameFocus))
@@ -145,7 +156,14 @@ private fun SourceDelete(state: SourceManagerState, viewModel: SourceManagerView
     val inputMode = LocalInputModeManager.current
     val source = state.deleting ?: return
     val cancelFocus = remember(calculation = { FocusRequester() })
-    LaunchedEffect(key1 = source.id, block = { inputMode.requestInputMode(InputMode.Keyboard); cancelFocus.requestFocus() })
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(source.id, windowFocused, block = {
+        if (windowFocused) {
+            inputMode.requestInputMode(InputMode.Keyboard)
+            withFrameNanos(onFrame = { _ -> })
+            cancelFocus.requestFocus()
+        }
+    })
     Column(verticalArrangement = Arrangement.spacedBy(20.dp), content = {
         DialogHeader(title = stringResource(R.string.source_delete_title, source.name), onClose = viewModel::back)
         SourceError(error = state.error)

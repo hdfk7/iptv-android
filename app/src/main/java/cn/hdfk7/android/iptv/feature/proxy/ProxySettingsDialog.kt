@@ -10,6 +10,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -35,10 +36,17 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         draft = updated
         error = null
     }
-    val inputMode = LocalInputModeManager.current
     val focus = remember(calculation = { FocusRequester() })
-    LaunchedEffect(key1 = Unit, block = { inputMode.requestInputMode(InputMode.Keyboard); focus.requestFocus() })
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false), content = {
+        val inputMode = LocalInputModeManager.current
+        val windowFocused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(windowFocused, block = {
+            if (windowFocused) {
+                inputMode.requestInputMode(InputMode.Keyboard)
+                withFrameNanos(onFrame = { _ -> })
+                focus.requestFocus()
+            }
+        })
         Column(modifier = Modifier.width(560.dp).heightIn(max = 480.dp).background(DialogSurface, RoundedCornerShape(22.dp)).padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp), content = {
             Text(text = stringResource(R.string.proxy_title), color = Color.White)
             TvIconButton(

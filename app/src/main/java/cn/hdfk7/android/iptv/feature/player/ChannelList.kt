@@ -69,13 +69,12 @@ private object NoFocusScrollSpec : BringIntoViewSpec {
 class ChannelListFocus(val memory: ChannelFocusMemory) {
     val requesters = mutableStateMapOf<String, FocusRequester>()
     var restore: (() -> Unit)? = null
-    var focusSelected: (() -> Unit)? = null
     var focusTop: (() -> Unit)? = null
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null, cinema: Boolean = false, domestic: Boolean = false, groupControls: @Composable () -> Unit = {}) {
+fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null, cinema: Boolean = false, domestic: Boolean = false, groupKey: String = "", requestDrawerFocus: Boolean = false, groupControls: @Composable () -> Unit = {}) {
     val favorites = state.activeSourceId == SourceLibrary.FAVORITES_ID
     val selectedIndex = remember(state.channels, state.selectedId, calculation = {
         state.channels.indexOfFirst(predicate = { channel -> channel.id == state.selectedId })
@@ -92,9 +91,13 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
             if (index >= 0) {
                 listState.revealItem(index = index)
                 withTimeoutOrNull(1000, block = {
-                    val requester = snapshotFlow(block = { selectedRowFocus.requesters[target.id] }).first(predicate = { requester -> requester != null })
-                    withFrameNanos(onFrame = { })
-                    requester?.requestFocus()
+                    while (isActive) {
+                        snapshotFlow(block = { selectedRowFocus.requesters[target.id] }).first(predicate = { requester -> requester != null })
+                        withFrameNanos(onFrame = { })
+                        if (selectedRowFocus.requesters[target.id]?.requestFocus() == true) {
+                            break
+                        }
+                    }
                 })
             }
         }
@@ -103,11 +106,6 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
         selectedRowFocus.restore = {
             scope.launch(block = {
                 reveal(selectedRowFocus.memory.target(state.activeSourceId, state.channels, state.selectedId))
-            })
-        }
-        selectedRowFocus.focusSelected = {
-            scope.launch(block = {
-                reveal(state.channels.firstOrNull(predicate = { channel -> channel.id == state.selectedId }) ?: state.channels.firstOrNull())
             })
         }
     })
@@ -123,8 +121,16 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
         pendingChannel = null
         selectChannel(channel)
     }
-    LaunchedEffect(key1 = state.activeSourceId, key2 = selectedIndex, key3 = state.selectedId, block = {
-        if (listHasFocus) {
+    LaunchedEffect(requestDrawerFocus, groupKey, state.channels.isNotEmpty(), block = {
+        if (requestDrawerFocus && state.channels.isNotEmpty()) {
+            val index = selectedIndex.coerceAtLeast(0)
+            // The lazy list may still hold the scroll anchor from the previous group.
+            listState.scrollToItem(index)
+            reveal(state.channels[index])
+        }
+    })
+    LaunchedEffect(state.activeSourceId, groupKey, selectedIndex, state.selectedId, block = {
+        if (listHasFocus || requestDrawerFocus) {
             return@LaunchedEffect
         }
         if (selectedIndex >= 0) {

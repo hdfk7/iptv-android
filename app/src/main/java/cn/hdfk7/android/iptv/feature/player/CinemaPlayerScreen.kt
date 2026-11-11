@@ -83,6 +83,8 @@ internal fun CinemaPlayerScreen(
     }
     val displayName = if (displayChannel != null) domesticDisplayName(displayChannel) else state.selectedName
     val visiblePanel = if (state.infoVisible) panel else TvPanel.Controls
+    val keepFocusInDrawer = television && visiblePanel == TvPanel.Channels && domestic && hasChannels
+    val keepFocusInMore = television && visiblePanel == TvPanel.More
     val showPanel: (TvPanel) -> Unit = { target ->
         returnToMore = target == TvPanel.More || (target == TvPanel.Controls && panel == TvPanel.More)
         panel = target
@@ -99,7 +101,7 @@ internal fun CinemaPlayerScreen(
     LaunchedEffect(dialogOpen, visiblePanel, block = {
         viewModel.holdInformation(dialogOpen || visiblePanel != TvPanel.Controls)
     })
-    LaunchedEffect(state.infoVisible, visiblePanel, dialogOpen, hasChannels, windowFocused, television, activeGroup, block = {
+    LaunchedEffect(state.infoVisible, visiblePanel, dialogOpen, hasChannels, windowFocused, television, block = {
         if (!television || dialogOpen || !windowFocused) {
             return@LaunchedEffect
         }
@@ -112,7 +114,7 @@ internal fun CinemaPlayerScreen(
                 surfaceFocus.requestFocus()
             }
             visiblePanel == TvPanel.More -> firstMenuFocus.requestFocus()
-            visiblePanel == TvPanel.Channels && hasChannels -> selectedRowFocus.focusSelected?.invoke()
+            visiblePanel == TvPanel.Channels && hasChannels -> Unit
             returnToMore -> moreFocus.requestFocus()
             else -> channelsFocus.requestFocus()
         }
@@ -224,13 +226,14 @@ internal fun CinemaPlayerScreen(
                 onChannels = { showPanel(if (visiblePanel == TvPanel.Channels) TvPanel.Controls else TvPanel.Channels) },
                 onMore = { showPanel(if (visiblePanel == TvPanel.More) TvPanel.Controls else TvPanel.More) },
                 portrait = portrait,
+                controlsFocusable = !keepFocusInDrawer && !keepFocusInMore,
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .then(controlInsets)
                     .padding(horizontal = inset, vertical = bottom)
             )
             when (visiblePanel) {
                 TvPanel.Controls -> Unit
-                TvPanel.Channels -> key(state.activeSourceId, activeGroup, block = {
+                TvPanel.Channels -> key(state.activeSourceId, block = {
                     ChannelPanel(
                         state = state.copy(channels = groups[activeGroup] ?: state.channels),
                         onSelect = viewModel::select,
@@ -251,12 +254,14 @@ internal fun CinemaPlayerScreen(
                             panel = TvPanel.Controls
                             viewModel.hideInformation()
                         },
-                        onRight = { channelsFocus.requestFocus() },
-                        onLeftToHeader = { channelsFocus.requestFocus() },
-                        onTopBoundary = { channelsFocus.requestFocus() },
-                        onBottomBoundary = { channelsFocus.requestFocus() },
+                        onRight = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
+                        onLeftToHeader = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
+                        onTopBoundary = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
+                        onBottomBoundary = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
                         cinema = true,
                         domestic = domestic,
+                        groupKey = activeGroup.name,
+                        requestDrawerFocus = television && windowFocused,
                         groupControls = {
                             if (availableGroups.size > 1) {
                                 DomesticChannelControls(availableGroups, activeGroup, television, onSelect = { group -> selectedGroup = group })
@@ -297,6 +302,7 @@ private fun CinemaControls(
     onChannels: () -> Unit,
     onMore: () -> Unit,
     portrait: Boolean,
+    controlsFocusable: Boolean,
     modifier: Modifier
 ): Unit {
     val channelName: @Composable (Modifier) -> Unit = { nameModifier ->
@@ -315,17 +321,21 @@ private fun CinemaControls(
             verticalAlignment = Alignment.CenterVertically,
             content = {
                 val actionWidth = if (portrait) Modifier.weight(1f) else Modifier
-                CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels, modifier = actionWidth.focusRequester(channelsFocus))
+                CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels,
+                    modifier = actionWidth.focusRequester(channelsFocus), interactive = controlsFocusable)
                 if (state.selectedId != null) {
                     val playing = state.playback == PlaybackStatus.PLAYING
                     val favorite = state.selectedId in state.favoriteIds
                     CinemaAction(label = stringResource(if (playing) R.string.pause else R.string.play),
-                        icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = viewModel::togglePlayback, modifier = actionWidth)
+                        icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = viewModel::togglePlayback,
+                        modifier = actionWidth, interactive = controlsFocusable)
                     CinemaAction(label = stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add),
                         icon = if (favorite) R.drawable.ic_star_filled else R.drawable.ic_star,
-                        tint = if (favorite) Gold else Accent, onClick = viewModel::toggleCurrentFavorite, modifier = actionWidth)
+                        tint = if (favorite) Gold else Accent, onClick = viewModel::toggleCurrentFavorite,
+                        modifier = actionWidth, interactive = controlsFocusable)
                 }
-                CinemaAction(label = stringResource(R.string.tv_more), onClick = onMore, modifier = actionWidth.focusRequester(moreFocus))
+                CinemaAction(label = stringResource(R.string.tv_more), onClick = onMore,
+                    modifier = actionWidth.focusRequester(moreFocus), interactive = controlsFocusable)
             }
         )
     }
@@ -397,8 +407,21 @@ private fun CinemaAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: Int? = null,
-    tint: Color = Accent
+    tint: Color = Accent,
+    interactive: Boolean = true
 ): Unit {
+    val labelContent: @Composable () -> Unit = {
+        if (icon != null) {
+            Icon(painter = painterResource(icon), contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+        } else {
+            Text(text = label, color = Accent, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+    if (!interactive) {
+        Box(modifier = modifier.height(46.dp).defaultMinSize(minWidth = 58.dp).padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center, content = { labelContent() })
+        return
+    }
     TvAction(
         onClick = onClick,
         modifier = modifier,
@@ -407,12 +430,6 @@ private fun CinemaAction(
         focusBorderWidth = 2.dp,
         showUnfocusedBorder = false,
         contentPadding = PaddingValues(horizontal = 12.dp),
-        content = {
-            if (icon != null) {
-                Icon(painter = painterResource(icon), contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
-            } else {
-                Text(text = label, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
+        content = { labelContent() }
     )
 }
