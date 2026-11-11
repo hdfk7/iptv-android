@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -34,15 +34,18 @@ class AppUpdateFileProvider : FileProvider()
 internal data class AppRelease(val versionCode: Int, val versionName: String, val downloadUrl: String)
 
 private suspend fun readAppRelease(address: String): AppRelease {
-    val body = withTimeout(timeMillis = 20_000L, block = { downloadUpdateManifest(address) })
+    val manifestUrl = address.toHttpUrlOrNull()
+    if (manifestUrl == null || !manifestUrl.isHttps || manifestUrl.username.isNotEmpty() || manifestUrl.password.isNotEmpty()) {
+        throw AppUpdateDownloadException(R.string.app_update_manifest_invalid)
+    }
+    val body = withTimeout(timeMillis = 20_000L, block = { downloadUpdateManifest(manifestUrl.toString()) })
     try {
-        val manifestUrl = address.toHttpUrl()
-        require(manifestUrl.isHttps)
         val manifest = JSONObject(body)
         val versionCode = manifest.get("versionCode") as? Int ?: error("Expected an integer versionCode")
         val versionName = manifest.getString("versionName")
         val downloadUrl = requireNotNull(manifestUrl.resolve(manifest.getString("apkUrl")))
-        require(versionCode > 0 && versionName.isNotBlank() && downloadUrl.isHttps && downloadUrl != manifestUrl)
+        require(versionCode > 0 && versionName.isNotBlank() && downloadUrl.isHttps && downloadUrl != manifestUrl &&
+            downloadUrl.username.isEmpty() && downloadUrl.password.isEmpty())
         return AppRelease(versionCode, versionName, downloadUrl.toString())
     } catch (_: Exception) {
         throw AppUpdateDownloadException(R.string.app_update_manifest_invalid)

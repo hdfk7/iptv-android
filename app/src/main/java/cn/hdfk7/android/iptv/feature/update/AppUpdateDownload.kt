@@ -19,6 +19,7 @@ import okhttp3.Response
 
 private val progressInterval = TimeUnit.MILLISECONDS.toNanos(120)
 private val updateClient = OkHttpClient.Builder().followSslRedirects(false).readTimeout(3, TimeUnit.MINUTES).build()
+private const val MAX_APK_BYTES = 256L * 1024 * 1024
 
 internal suspend fun downloadUpdateManifest(address: String): String = suspendCancellableCoroutine(block = { continuation ->
     val call = updateClient.newCall(Request.Builder().url(address).build())
@@ -56,6 +57,9 @@ internal data class AppDownloadProgress(val downloaded: Long, val total: Long) {
 }
 
 internal fun copyUpdateBody(input: InputStream, output: OutputStream, total: Long, isActive: () -> Boolean, onProgress: (AppDownloadProgress) -> Unit) {
+    if (total > MAX_APK_BYTES) {
+        throw AppUpdateDownloadException(R.string.app_update_download_too_large)
+    }
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
     var downloaded = 0L
     var reportedAt = System.nanoTime()
@@ -68,6 +72,9 @@ internal fun copyUpdateBody(input: InputStream, output: OutputStream, total: Lon
             }
             onProgress(AppDownloadProgress(downloaded, total))
             return
+        }
+        if (downloaded + count > MAX_APK_BYTES) {
+            throw AppUpdateDownloadException(R.string.app_update_download_too_large)
         }
         try {
             output.write(buffer, 0, count)

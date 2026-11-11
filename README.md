@@ -1,6 +1,6 @@
 # iptv
 
-原生 Kotlin / Compose Android TV 播放器，针对 Android 14（targetSdk 34），最低 API 26，compileSdk 37。动态维护直播源，单源播放，按节目汇聚线路并跨源收藏。主界面不显示品牌、宣传或操作说明。
+原生 Kotlin / Jetpack Compose 播放器，使用 Media3 ExoPlayer，支持 Android TV 和手机。针对 Android 14（targetSdk 34），最低 API 26，compileSdk 37。动态维护直播源，单源播放，按频道汇聚线路并跨源收藏。
 
 ## 构建与安装
 
@@ -10,11 +10,14 @@ Android Studio 打开本目录。使用支持 AGP 9.4.1 的 Android Studio、Gra
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
 ```
 
-APK 输出到 `app/build/outputs/apk/debug`、`app/build/outputs/apk/release`，文件名为 `IPTV-构建类型-v版本-时间戳.apk`。本次交付副本为 `app/build/outputs/iptv-debug.apk` 和 `app/build/outputs/iptv-release.apk`。
+APK 输出到 `app/build/outputs/apk/debug`、`app/build/outputs/apk/release`，文件名为 `IPTV-构建类型-v版本-时间戳.apk`。从 Release 输出目录的 `output-metadata.json` 获取本次构建的文件名和版本。
 
 ```powershell
-adb install -r app/build/outputs/iptv-debug.apk
-adb shell am start -n cn.hdfk7.android.iptv.debug/cn.hdfk7.android.iptv.app.MainActivity
+$releaseDir = 'app/build/outputs/apk/release'
+$release = (Get-Content "$releaseDir/output-metadata.json" -Raw | ConvertFrom-Json).elements[0]
+adb install -r (Join-Path $releaseDir $release.outputFile)
+adb shell dumpsys package cn.hdfk7.android.iptv | Select-String 'versionCode=|versionName='
+adb shell am start -n cn.hdfk7.android.iptv/cn.hdfk7.android.iptv.app.MainActivity
 ```
 
 Debug 包名 `cn.hdfk7.android.iptv.debug`、启动器名称 IPTV；Release 包名 `cn.hdfk7.android.iptv`、名称 IPTV。电视需开启开发者选项并完成 ADB 授权。macOS/Linux 使用 `./gradlew`。
@@ -33,13 +36,13 @@ Git 提交消息使用 `type:中文说明`，每次聚焦一个逻辑变更；PR
 
 顶部当前源或源管理按钮打开源面板，支持增加、修改名称/地址、删除和启用。始终只启用一个源，普通源不会混入其他源节目。新增不自动切源；删除当前源后使用剩余首个源，没有其他源时进入收藏源。切源停止原源播放，列表回到顶部。
 
-支持 HTTP(S) M3U/M3U8 直链、GitHub blob 文件链接，以及两个内置仓库的主页地址；其他仓库需提供文件链接。重复地址、空名称和不支持的地址会显示错误。
+支持 HTTP(S) 扩展 M3U 频道列表、GitHub blob 文件链接，以及三个内置仓库的主页地址。默认源为“国内精选”“综合频道”“全球频道”。重复地址、空名称和无效地址会显示错误。M3U8 可以是频道列表，也可以是用于播放的 HLS 清单，源管理只接受前者。
 
 ## 节目与轮询
 
 按节目名称聚合记录，不按分组拆分节目。地址去重并保留出现顺序。名称统一全角/半角、大小写、空格，常见 CCTV1 / CCTV-1 / CCTV1综合 / CCTV1高清 合并。CCTV5 与 CCTV5+、CCTV4 与 CCTV4K、CCTV4欧洲与 CCTV4美洲保持区分；其他名称不猜测别名。
 
-上一节目、下一节目和频道键切换节目，从新节目的第一条地址开始依次尝试。首条进入可播状态的线路持续播放；错误、持续缓冲超时或直播意外结束后换下一条。尝试全部候选地址，没有八条上限；全部失败后显示错误，可重试或切台。
+上一节目、下一节目和频道键切换节目。尚无质量记录时按源顺序尝试线路，有记录时按播放稳定性、分辨率、帧率和启动耗时排序。播放中更新排序会保留当前 URL。遇到错误、缓冲或画面停滞超时、直播意外结束时，尝试剩余线路。全部失败后可重试、手动选线或切台。
 
 超时在 gradle.properties 中配置，单位毫秒，使用正整数，修改后重新打包：
 
@@ -49,7 +52,7 @@ STREAM_READ_TIMEOUT_MS=5000
 STREAM_PROBE_TIMEOUT_MS=8000
 ```
 
-分别为连接、停滞读取、每条线路持续缓冲的最大等待时间。READY 后取消探测计时，播放中再次缓冲时重新计时；单线路时限也约束内部重试。慢源可能被跳过，可按网络条件调整。
+分别为连接、停滞读取、每条线路持续缓冲或画面停滞的最大等待时间。线路入口返回 401、403、404 或 410 时直接尝试下一条，分片和暂时性错误沿用 Media3 重试策略。慢源可能被跳过，可按网络条件调整。
 
 ## 跨源收藏
 
@@ -61,7 +64,7 @@ STREAM_PROBE_TIMEOUT_MS=8000
 
 ## 全屏与遥控器
 
-选中视频区域后按确定进入全屏；按返回退出，焦点回到视频。按确认键、方向键、INFO 或 MENU 显示节目名、来源、收藏及播放控件；6 秒无操作隐藏浮层。方向键在显示的控件间移动，确认键执行；返回退出全屏。频道键直接换节目并显示新节目信息。媒体键播放/暂停，系统音量键保留原生行为。
+电视默认全屏播放，节目列表与控件显示在浮层中，6 秒无操作后隐藏。按确认键、左右方向键、INFO 或 MENU 可唤出浮层，上下方向键和频道键可切台。浮层隐藏时按返回会先唤出浮层，浮层显示时连续按两次返回退出应用。手机从预览进入全屏，按返回回到列表。媒体键可播放或暂停，系统音量键保留原生行为。
 
 列表页底部左侧为上一节目、播放/暂停、下一节目、重试；右侧为线路状态、音量减/加。固定音量设备提示使用电视/功放遥控器。离开前台释放播放器，无后台媒体服务或通知权限。
 
@@ -71,7 +74,11 @@ STREAM_PROBE_TIMEOUT_MS=8000
 
 按地址哈希独立缓存，切源先显示相应缓存。旧源延迟响应不覆盖当前源，修改 URL 不混用旧地址缓存。有效非空列表原子写入成功后才更新时间，网络、格式、空列表和写盘失败保留旧缓存。
 
-列表下载连接/读取各 15 秒、4 MiB 上限，不跟随入口重定向。仅支持 HTTP(S) 播放，拒绝用户名密码 URL。公共流含 HTTP，因此允许明文流量。不执行认证、Cookie、Referer 或解密指令，只使用用户显式配置的 HTTP 代理。EPG/台标属性不影响解析，本版不加载远程台标或节目单。
+列表下载的连接、读取超时各 15 秒，单次请求总时限 45 秒，解压后的列表上限 4 MiB。切源或应用新代理配置会取消旧的订阅请求。列表入口不跟随重定向。订阅和播放使用 HTTP(S)，拒绝 URL 内嵌用户名密码和无效端口。公共流含 HTTP，因此允许明文流量。应用不执行 M3U 中的认证、Cookie、Referer 或解密指令。
+
+## EPG 与台标
+
+“节目列表”指从 M3U 解析的频道和线路。当前版本忽略 `x-tvg-url`、`tvg-id` 和台标元数据，未实现 XMLTV 下载、频道匹配或节目时间表。
 
 ## 源仓库检查（2026-11-05）
 
@@ -86,7 +93,7 @@ STREAM_PROBE_TIMEOUT_MS=8000
 
 ## 架构与验证
 
-- app：宿主、生命周期、旧任务清理和遥控器事件。
+- app：宿主、生命周期和遥控器事件。
 - core/model：源、节目、收藏、名称归一化及线路聚合。
 - core/data/local、network、repository：原子持久化、限长下载/解析、业务规则和刷新隔离。
 - core/ui/theme、components：主题和统一焦点组件。
@@ -94,17 +101,15 @@ STREAM_PROBE_TIMEOUT_MS=8000
 
 Kotlin 使用显式参数和命名回调，无尾随 Lambda；界面单一根组件，文本在 strings.xml，行为与布局分离。
 
-33 项 JUnit 5 测试覆盖解析、名称合并/区分、线路去重、源增删改、单源激活、地址校验、跨源收藏、地址刷新、离线/重启、写盘失败、URL 缓存隔离和延迟响应竞争。Debug/Release 构建及 Lint 通过；Android 14 电视模拟器用于安装和实际界面验证，尚未在小米实体电视验证。
-
-本次模拟器验收：源新增/编辑/删除、单源切换、频道键从 CCTV1 切到 CCTV2、跨源 CCTV1 合并为一个收藏节目并汇聚 17 条不同地址、实际直播播放、全屏信息自动隐藏/INFO 和确认键唤出、唤出不误触收藏、返回列表均已验证。Debug 和 Release 的 APK 签名均与项目内对应证书匹配。历史机器可读验证记录在 `app/build/outputs/verification.json`；当前交互回归以 `app/build/outputs/qa/scenarios.json` 与截图为准。
+JUnit 5 覆盖解析、线路顺序、源管理、跨源收藏、离线缓存、刷新竞争、代理认证、取消下载、线路排序与更新包下载限制。Android 端使用当前源码构建的签名 Release 包验证，先核对安装版本。QA 场景、测试条件和产物见 `qa/README.md`。
 
 ## HTTP 代理
 
-从首页右上角的设置打开“HTTP 代理”，填写 IPv4/IPv6、端口及可选用户名/密码，开启并保存。支持 HTTP 转发和 HTTPS CONNECT、Basic 代理认证，不支持 SOCKS。订阅下载、视频清单及分片均使用同一代理；保存后重连当前节目并刷新当前源。关闭后直接连接。代理故障不会静默改为直连，更新失败保留缓存。配置在本机通过 Android Keystore AES-GCM 加密保存，不备份，不输出认证信息。
+从首页设置打开“HTTP 代理”，填写 IPv4/IPv6、端口及可选用户名/密码，开启并保存。支持 HTTP 转发、HTTPS CONNECT 和 Basic 代理认证。订阅下载、视频清单及分片使用同一配置；保存后重连当前节目并刷新当前源。关闭后直接连接。代理故障保留订阅缓存。配置使用 Android Keystore AES-GCM 加密保存。配置不可读时暂停订阅和播放请求，重新保存代理配置后恢复。
 
 启动默认选中订阅源列表中的第一个源；没有普通订阅源时显示收藏源。当前运行期间仍可切换源，前后台切换不会重置选择。
 
-应用显示名称为 IPTV；内置订阅源简称为“精选”和“综合”，升级仅替换未修改的默认长名称。首次节目列表加载后，遥控器焦点定位到第一个节目；退出全屏仍回到视频区域。
+首次频道列表加载后，遥控器焦点定位到第一个频道。
 
 全屏遥控器：上键切换上一个节目，下键切换下一个节目；首尾循环。信息浮层显示或隐藏时均可切台，并显示新节目信息。一次按键只切换一次，长按重复事件忽略；左右键继续移动控件焦点，确定键执行当前控件操作。
 
@@ -120,11 +125,11 @@ Kotlin 使用显式参数和命名回调，无尾随 Lambda；界面单一根组
 
 列表焦点按源和节目 ID 记录，不依赖行号；刷新重排仍能定位同一节目，节目删除后回退到当前节目或首项。切源关闭面板后定位首项，弹窗打开期间不抢焦点。移除收藏中最后一个正在全屏播放的节目时回到空收藏列表。
 
-连续移动节目焦点时等待 300ms 再启动预览，避免每个中间节目反复建流；确定键和右键进入视频区会立即确认当前节目。列表卡片不缩放，避免移动时视觉晃动；圆形图标仍有轻量焦点缩放。
+连续移动频道焦点时等待 150ms 再切台，减少中间频道的建流次数。列表卡片不缩放，圆形图标仍有轻量焦点缩放。
 
 视觉细调保留现有布局与按钮尺寸：石墨背景搭配低饱和蓝灰面板，白色焦点与深色前景；播放/暂停/切台采用实心图标，工具采用统一圆头线条，收藏使用实心星标与暖金色区分。
 
-播放器界面按职责分为 PlayerScreen（页面组合）、ChannelList（节目列表与焦点恢复）、PlaybackPanel（预览与控制）、FullscreenPlayer（全屏交互）。播放、恢复和全屏入口共用 setPlayback；不额外引入通用框架或控制器层。移除旧全屏/代理图标和不再使用的文案；节目单在进入前台或手动操作时刷新。
+播放器界面按职责分为 PlayerScreen（页面组合）、TvPlayerScreen 和 PhonePlayerScreen（设备布局）、ChannelList（频道列表与焦点恢复）、PlaybackPanel（播放控制）和 FullscreenPlayer（手机全屏交互）。
 
 ## 手动检查应用更新
 
@@ -138,4 +143,4 @@ Kotlin 使用显式参数和命名回调，无尾随 Lambda；界面单一根组
 
 打包时用 `-PAPP_UPDATE_MANIFEST_URL=https://example.com/iptv/latest.json` 指定接口，或将同名属性放入本机 Gradle 配置。未配置时，点击检查会显示提示。每次发布递增 APK 的 `versionCode`，保持发行签名一致。
 
-应用按 `versionCode` 比较，确认后下载到私有缓存，校验包名和版本，再打开系统安装界面。首次安装可能需要允许 IPTV 安装未知来源应用，授权返回后继续。
+应用按 `versionCode` 比较，确认后通过 HTTPS 下载到私有缓存，上限 256 MiB。校验包名、版本、最低 Android 版本及签名后打开系统安装界面。首次安装可能需要允许 IPTV 安装未知来源应用，授权返回后继续。

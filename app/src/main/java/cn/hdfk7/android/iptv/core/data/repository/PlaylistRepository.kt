@@ -31,7 +31,7 @@ interface LibraryStore {
 class PlaylistRepository(
     private val libraryStore: LibraryStore,
     private val playlistStores: (PlaylistSource) -> PlaylistStore,
-    private val download: (String) -> String,
+    private val download: suspend (String) -> String,
     private val clock: () -> Long
 ) {
     constructor(directory: File, downloader: PlaylistDownloader = PlaylistDownloader()) : this(
@@ -94,6 +94,9 @@ class PlaylistRepository(
                 }
                 val oldSources = library.sources.associateBy(keySelector = { source -> source.id })
                 library = updated
+                val remainingIds = updated.sources.map(transform = { source -> source.id }).toSet()
+                snapshots.keys.retainAll(remainingIds)
+                failedIds.retainAll(remainingIds)
                 for (source in updated.sources) {
                     if (oldSources[source.id]?.url != source.url) {
                         snapshots.remove(source.id)
@@ -157,6 +160,7 @@ class PlaylistRepository(
                                 try {
                                     libraryStore.write(updated)
                                     library = updated
+                                    storageFailed = false
                                 } catch (exception: Exception) {
                                     storageFailed = true
                                 }
@@ -213,8 +217,10 @@ class PlaylistRepository(
         val source = library.sources.firstOrNull(predicate = { entry -> entry.id == library.activeSourceId })
         val channels = if (favoritesMode) {
             ChannelAggregation.merge(library.favorites, SourceLibrary.FAVORITES_ID)
+        } else if (source != null) {
+            snapshots[source.id]?.channels.orEmpty().map(transform = { channel -> channel.copy(sourceId = source.id, sourceName = source.name) })
         } else {
-            ChannelAggregation.merge(snapshots[source?.id]?.channels.orEmpty()).map(transform = { channel -> channel.copy(sourceId = source!!.id, sourceName = source.name) })
+            emptyList()
         }
         val relevantIds = if (favoritesMode) {
             library.favorites.map(transform = { channel -> channel.sourceId }).toSet()

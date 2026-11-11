@@ -5,14 +5,16 @@ import cn.hdfk7.android.iptv.core.model.PlaylistSnapshot
 import cn.hdfk7.android.iptv.core.model.RefreshResult
 import java.io.IOException
 import java.util.concurrent.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 interface PlaylistStore {
     fun read(): PlaylistSnapshot?
     fun write(snapshot: PlaylistSnapshot)
 }
 
-class RefreshEngine(private val store: PlaylistStore, private val download: (String) -> String, private val clock: () -> Long) {
-    fun refresh(sourceUrl: String = SOURCE_URL): RefreshResult {
+class RefreshEngine(private val store: PlaylistStore, private val download: suspend (String) -> String, private val clock: () -> Long) {
+    suspend fun refresh(sourceUrl: String = SOURCE_URL): RefreshResult {
         val cached = store.read()
         try {
             val channels = PlaylistParser().parse(download(sourceUrl), sourceUrl)
@@ -20,6 +22,7 @@ class RefreshEngine(private val store: PlaylistStore, private val download: (Str
                 throw IOException("Empty channel catalog")
             }
             val snapshot = PlaylistSnapshot(channels, clock())
+            currentCoroutineContext().ensureActive()
             store.write(snapshot)
             return RefreshResult(snapshot, failed = false)
         } catch (exception: CancellationException) {

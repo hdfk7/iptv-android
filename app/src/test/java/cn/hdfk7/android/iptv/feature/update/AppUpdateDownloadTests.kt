@@ -2,6 +2,9 @@ package cn.hdfk7.android.iptv.feature.update
 
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import cn.hdfk7.android.iptv.R
 import kotlinx.coroutines.CancellationException
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -44,5 +47,20 @@ class AppUpdateDownloadTests {
             copyUpdateBody(byteArrayOf(1).inputStream(), output, 1L, isActive = { false }, onProgress = {})
         })
         assertEquals(0, output.size())
+    }
+
+    @Test
+    fun oversizedDownloadsAreRejectedWithOrWithoutContentLength(): Unit {
+        val limit = 256L * 1024 * 1024
+        for (total in listOf(limit + 1, -1L)) {
+            val input = object : InputStream() {
+                override fun read(): Int = error("Expected buffered reads")
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int = length
+            }
+            val failure = assertThrows(AppUpdateDownloadException::class.java, {
+                copyUpdateBody(input, OutputStream.nullOutputStream(), total, isActive = { true }, onProgress = {})
+            })
+            assertEquals(R.string.app_update_download_too_large, failure.messageRes)
+        }
     }
 }

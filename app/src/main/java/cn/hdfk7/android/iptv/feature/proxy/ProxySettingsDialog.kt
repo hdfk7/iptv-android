@@ -29,8 +29,8 @@ import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 
 @Composable
 fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved: () -> Unit) {
-    var draft by remember(calculation = { mutableStateOf(store.current) })
-    var error by remember(calculation = { mutableStateOf<Int?>(null) })
+    var draft by remember(calculation = { mutableStateOf(store.current ?: ProxySettings()) })
+    var error by remember(calculation = { mutableStateOf<Int?>(if (store.current == null) R.string.proxy_read_error else null) })
     val updateDraft: (ProxySettings) -> Unit = { updated ->
         draft = updated
         error = null
@@ -78,7 +78,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                             error = R.string.storage_error
                             return@TvIconButton
                         }
-                        if (previous.enabled || draft.enabled) {
+                        if (previous == null || previous.enabled || draft.enabled) {
                             onSaved()
                         }
                     }

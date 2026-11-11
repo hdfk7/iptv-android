@@ -7,5 +7,7 @@ import cn.hdfk7.android.iptv.core.data.repository.PlaylistRepository
 
 class IptvApplication : Application() {
     val proxySettings by lazy(initializer = { ProxySettingsStore(this) })
-    val playlistRepository: PlaylistRepository by lazy(initializer = { PlaylistRepository(filesDir, PlaylistDownloader(settings = { proxySettings.current })) })
+    val playlistRepository: PlaylistRepository by lazy(initializer = {
+        PlaylistRepository(filesDir, PlaylistDownloader(settings = { checkNotNull(proxySettings.current) }))
+    })
 }

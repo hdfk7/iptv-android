@@ -112,7 +112,7 @@ fun FullscreenPlayer(state: PlayerState, viewModel: PlayerViewModel, touchContro
                         if (!landscapePhone) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
                                 programInfo(Modifier.weight(1f))
-                                if (touchControls && state.line > 0) {
+                                if (touchControls && state.lineCount > 0) {
                                     StreamLineBadge(state = state, onSwitch = viewModel::changeStreamLine)
                                     retryLineButton()
                                 }
@@ -125,7 +125,7 @@ fun FullscreenPlayer(state: PlayerState, viewModel: PlayerViewModel, touchContro
                             TvIconButton(icon = R.drawable.ic_previous, description = stringResource(R.string.previous), onClick = { viewModel.changeChannel(-1) })
                             TvIconButton(icon = if (state.playback == PlaybackStatus.PLAYING) R.drawable.ic_pause else R.drawable.ic_play, description = stringResource(if (state.playback == PlaybackStatus.PLAYING) R.string.pause else R.string.play), onClick = viewModel::togglePlayback, modifier = Modifier.focusRequester(controlFocus))
                             TvIconButton(icon = R.drawable.ic_next, description = stringResource(R.string.next), onClick = { viewModel.changeChannel(1) })
-                            if (landscapePhone && state.line > 0) {
+                            if (landscapePhone && state.lineCount > 0) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 StreamLineBadge(state = state, onSwitch = viewModel::changeStreamLine)
                                 retryLineButton()
@@ -135,7 +135,7 @@ fun FullscreenPlayer(state: PlayerState, viewModel: PlayerViewModel, touchContro
                             TvIconButton(icon = if (state.selectedId in state.favoriteIds) R.drawable.ic_star_filled else R.drawable.ic_star, description = stringResource(if (state.selectedId in state.favoriteIds) R.string.favorite_remove else R.string.favorite_add), onClick = viewModel::toggleCurrentFavorite, tint = if (state.selectedId in state.favoriteIds) Gold else Color.White)
                             if (touchControls) {
                                 TvIconButton(icon = R.drawable.ic_close, description = stringResource(R.string.exit_fullscreen), onClick = viewModel::exitFullscreen)
-                            } else if (state.line > 0) {
+                            } else if (state.lineCount > 0) {
                                 StreamLineBadge(state = state, onSwitch = viewModel::changeStreamLine)
                                 retryLineButton()
                             }

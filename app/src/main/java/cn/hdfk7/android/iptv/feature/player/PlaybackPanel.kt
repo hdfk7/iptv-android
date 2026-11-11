@@ -165,7 +165,7 @@ private fun playbackMessage(state: PlayerState): String {
 @Composable
 fun PlaybackControls(state: PlayerState, viewModel: PlayerViewModel, selectedRowFocus: ChannelListFocus, touchControls: Boolean, narrowTv: Boolean, modifier: Modifier = Modifier, controlsFocus: FocusRequester? = null, onLeft: (() -> Unit)? = null, volumeUpFocus: FocusRequester? = null, onSettingsUp: (() -> Unit)? = null) {
     val tvFocus = remember(calculation = { List(8, init = { _ -> FocusRequester() }) })
-    val lineButtonsEnabled = !narrowTv && state.line > 0 && state.lineCount > 1
+    val lineButtonsEnabled = !narrowTv && state.lineCount > 1
     val focusOrder = if (lineButtonsEnabled) listOf(0, 1, 2, 3, 4, 5, 6, 7) else listOf(0, 1, 2, 3, 6, 7)
     val focusTargets = tvFocus.mapIndexed(transform = { index, requester ->
         when (index) {
@@ -234,7 +234,7 @@ fun PlaybackControls(state: PlayerState, viewModel: PlayerViewModel, selectedRow
             if (!touchControls) {
                 Spacer(modifier = Modifier.weight(1f))
             }
-            if (!narrowTv && state.line > 0) {
+            if (!narrowTv && state.lineCount > 0) {
                 StreamLineBadge(state = state, onSwitch = viewModel::changeStreamLine, previousModifier = navigation(4), nextModifier = navigation(5))
             }
             if (!touchControls) {

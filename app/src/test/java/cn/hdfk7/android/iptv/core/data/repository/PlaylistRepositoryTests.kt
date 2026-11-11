@@ -142,7 +142,7 @@ class PlaylistRepositoryTests {
         })
     }
 
-    private fun repository(storage: MemoryLibrary, stores: MutableMap<String, MemoryPlaylist>, download: (String) -> String): PlaylistRepository {
+    private fun repository(storage: MemoryLibrary, stores: MutableMap<String, MemoryPlaylist>, download: suspend (String) -> String): PlaylistRepository {
         return PlaylistRepository(storage, { source ->
             synchronized(stores, block = { stores.getOrPut(key = source.url, defaultValue = { MemoryPlaylist() }) })
         }, download, { 1000L })

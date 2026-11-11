@@ -5,6 +5,15 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
 }
+
+def streamTimeout = { String name, int fallback ->
+    def value = providers.gradleProperty(name).getOrElse(fallback.toString())
+    if (!value.isInteger() || value.toInteger() <= 0) {
+        throw new GradleException("${name} must be a positive integer in milliseconds")
+    }
+    value.toInteger().toString()
+}
+
 android {
     namespace = 'cn.hdfk7.android.iptv'
     compileSdk {
@@ -33,9 +42,9 @@ android {
         def updateManifestUrl = providers.gradleProperty("APP_UPDATE_MANIFEST_URL").getOrElse("")
         buildConfigField "String", "APP_UPDATE_MANIFEST_URL", JsonOutput.toJson(updateManifestUrl)
         buildConfigField "boolean", "APP_DEBUG_SWITCH", APP_DEBUG_SWITCH
-        buildConfigField "int", "STREAM_CONNECT_TIMEOUT_MS", providers.gradleProperty("STREAM_CONNECT_TIMEOUT_MS").getOrElse("5000")
-        buildConfigField "int", "STREAM_READ_TIMEOUT_MS", providers.gradleProperty("STREAM_READ_TIMEOUT_MS").getOrElse("5000")
-        buildConfigField "int", "STREAM_PROBE_TIMEOUT_MS", providers.gradleProperty("STREAM_PROBE_TIMEOUT_MS").getOrElse("8000")
+        buildConfigField "int", "STREAM_CONNECT_TIMEOUT_MS", streamTimeout("STREAM_CONNECT_TIMEOUT_MS", 5000)
+        buildConfigField "int", "STREAM_READ_TIMEOUT_MS", streamTimeout("STREAM_READ_TIMEOUT_MS", 5000)
+        buildConfigField "int", "STREAM_PROBE_TIMEOUT_MS", streamTimeout("STREAM_PROBE_TIMEOUT_MS", 8000)
     }
     buildFeatures {
         resValues = true

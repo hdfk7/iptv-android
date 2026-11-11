@@ -131,7 +131,7 @@ private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerView
     Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp), content = {
         DialogHeader(title = stringResource(if (draft.id == null) R.string.source_add else R.string.source_edit), onClose = viewModel::back)
         OutlinedTextField(value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, enabled = !state.busy, modifier = Modifier.fillMaxWidth().focusRequester(nameFocus))
-        OutlinedTextField(value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, minLines = 2, maxLines = 2, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false), enabled = !state.busy, modifier = Modifier.fillMaxWidth())
         SourceError(error = state.error)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), content = {
             TvIconButton(description = stringResource(if (state.busy) R.string.saving else R.string.save), icon = R.drawable.ic_check, onClick = viewModel::save, selected = true, enabled = !state.busy)

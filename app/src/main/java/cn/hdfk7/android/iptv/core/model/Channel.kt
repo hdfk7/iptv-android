@@ -7,10 +7,8 @@ data class Channel(
     val sourceId: String = "",
     val sourceName: String = ""
 ) {
-    val key: String
-        get() = ChannelNames.key(name)
-    val id: String
-        get() = "$sourceId/$key"
+    val key: String = ChannelNames.key(name)
+    val id: String = "$sourceId/$key"
 }
 
 data class PlaylistSnapshot(val channels: List<Channel>, val updatedAt: Long)

@@ -7,6 +7,7 @@ import android.util.AtomicFile
 import cn.hdfk7.android.iptv.core.model.ProxySettings
 import org.json.JSONObject
 import java.io.File
+import java.io.FileNotFoundException
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -15,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 class ProxySettingsStore(context: Context) {
     private val file = AtomicFile(File(context.noBackupFilesDir, "proxy-settings.bin"))
-    @Volatile var current: ProxySettings = read()
+    @Volatile var current: ProxySettings? = read()
         private set
 
     @Synchronized fun save(settings: ProxySettings) {
@@ -35,17 +36,21 @@ class ProxySettingsStore(context: Context) {
         }
     }
 
-    private fun read(): ProxySettings {
-        if (!file.baseFile.exists()) {
-            return ProxySettings()
-        }
+    private fun read(): ProxySettings? {
         return runCatching(block = {
-            val bytes = file.readFully()
+            val bytes = try {
+                file.readFully()
+            } catch (exception: FileNotFoundException) {
+                if (file.baseFile.exists()) {
+                    throw exception
+                }
+                return ProxySettings()
+            }
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
             val json = JSONObject(String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8))
             ProxySettings(json.getBoolean("enabled"), json.getString("host"), json.getString("port"), json.getString("username"), json.getString("password")).also(block = { require(it.valid()) })
-        }).getOrElse(onFailure = { throw IllegalStateException("Proxy settings unavailable", it) })
+        }).getOrNull()
     }
 
     private fun key(): SecretKey {

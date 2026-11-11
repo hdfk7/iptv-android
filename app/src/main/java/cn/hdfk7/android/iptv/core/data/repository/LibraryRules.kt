@@ -30,7 +30,8 @@ object LibraryRules {
     fun normalizeAddress(address: String): String {
         val input = address.trim()
         val uri = runCatching(block = { URI(input) }).getOrNull()
-        val valid = uri != null && uri.scheme?.lowercase() in listOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.fragment == null && input.length <= 4096
+        val valid = uri != null && uri.scheme?.lowercase() in listOf("http", "https") && !uri.host.isNullOrBlank() &&
+            uri.userInfo == null && uri.fragment == null && (uri.port == -1 || uri.port in 1..65535) && input.length <= 4096
         if (!valid) {
             throw LibraryException(LibraryError.ADDRESS)
         }

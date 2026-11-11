@@ -1,6 +1,9 @@
 package cn.hdfk7.android.iptv.core.data.network
 
 import cn.hdfk7.android.iptv.core.model.ProxySettings
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import okhttp3.Credentials
 import okhttp3.Request
 import org.junit.jupiter.api.Assertions.*
@@ -19,7 +22,7 @@ class ProxyHttpClientTests {
         assertFalse(ProxySettings(password = "secret").toString().contains("secret"))
     }
 
-    @Test fun playlistUsesProxyAndAnswersAuthenticationChallenge() {
+    @Test fun playlistUsesProxyAndAnswersAuthenticationChallenge(): Unit = runBlocking(block = {
         ServerSocket(0).use(block = { server ->
             val requests = CompletableFuture.supplyAsync(java.util.function.Supplier {
                 val captured = mutableListOf<String>()
@@ -48,7 +51,7 @@ class ProxyHttpClientTests {
             assertTrue(captured[1].contains("Proxy-Authorization: " + Credentials.basic("tester", "test-password")))
             assertFalse(captured[1].contains("\nAuthorization:"))
         })
-    }
+    })
 
     @Test fun disabledProxyConnectsDirectly() {
         ServerSocket(0).use(block = { server ->
@@ -69,4 +72,32 @@ class ProxyHttpClientTests {
             }
         })
     }
+
+    @Test fun cancellingPlaylistDownloadClosesActiveRequest(): Unit = runBlocking(block = {
+        ServerSocket(0).use(block = { server ->
+            server.soTimeout = 5000
+            val requestReceived = CompletableFuture<Unit>()
+            val disconnected = CompletableFuture.supplyAsync(java.util.function.Supplier {
+                server.accept().use(block = { socket ->
+                    socket.soTimeout = 5000
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (!reader.readLine().isNullOrEmpty()) {
+                        // Read the request headers before cancelling the call.
+                    }
+                    requestReceived.complete(Unit)
+                    reader.read()
+                })
+            })
+            val download = launch(context = kotlinx.coroutines.Dispatchers.IO, block = {
+                PlaylistDownloader().download("http://127.0.0.1:${server.localPort}/slow")
+            })
+            try {
+                requestReceived.get(5, TimeUnit.SECONDS)
+                download.cancelAndJoin()
+                assertEquals(-1, disconnected.get(5, TimeUnit.SECONDS))
+            } finally {
+                download.cancelAndJoin()
+            }
+        })
+    })
 }

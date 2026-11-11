@@ -53,6 +53,8 @@
     <string name="proxy_save">保存</string>
     <string name="proxy_cancel">取消</string>
     <string name="proxy_invalid">请检查 IP、端口（1–65535）及认证信息</string>
+    <string name="proxy_read_error">无法读取代理配置，请在设置中重新保存</string>
+    <string name="app_update_download_too_large">更新包超过 256 MiB 下载限制</string>
     <string name="exit_fullscreen">退出全屏</string>
     <string name="press_back_again">再按一次返回键退出应用</string>
     <string name="channel_count">节目 · %1$d</string>

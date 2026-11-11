@@ -115,8 +115,19 @@ class PlaylistParserTests {
 
     @Test
     fun mergesSameProgramAcrossDifferentGroups() {
-        val channels = parser.parse("#EXTM3U\n#EXTINF:-1 group-title=\"A\",News\na.m3u8\n#EXTINF:-1 group-title=\"B\",News\nb.m3u8", base)
-        assertEquals(1, channels.size)
-        assertEquals(2, channels.single().streams.size)
+        val text = """
+            #EXTM3U
+            #EXTINF:-1,News
+            https://example.org/a
+            #EXTINF:-1 group-title="B",News
+            https://example.org/b
+            #EXTINF:-1,News
+            https://example.org/c
+            #EXTINF:-1 group-title="B",News
+            https://example.org/a
+        """.trimIndent()
+        val channel = parser.parse(text, base).single()
+        assertEquals("B", channel.group)
+        assertEquals(listOf("https://example.org/a", "https://example.org/b", "https://example.org/c"), channel.streams)
     }
 }

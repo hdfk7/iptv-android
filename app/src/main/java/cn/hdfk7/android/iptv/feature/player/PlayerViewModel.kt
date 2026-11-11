@@ -14,10 +14,13 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import cn.hdfk7.android.iptv.core.data.network.ProxyHttpClient
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.BuildConfig
 import cn.hdfk7.android.iptv.core.model.ChannelAggregation
@@ -54,6 +57,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     var player: ExoPlayer? by mutableStateOf(null)
         private set
     private var httpClient: okhttp3.OkHttpClient? = null
+    @Volatile private var lineAddress: String? = null
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var activeChannel: Channel? = null
     private var streamIndex = 0
@@ -78,8 +82,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val source = catalog.library.sources.firstOrNull(predicate = { entry -> entry.id == catalog.library.activeSourceId })
                 val token = "${catalog.library.activeSourceId}:${source?.url.orEmpty()}"
                 val switched = catalog.loaded && catalogToken != null && catalogToken != token
-                val favoriteRemoved = catalog.library.activeSourceId == SourceLibrary.FAVORITES_ID && activeChannel != null && catalog.channels.none(predicate = { channel -> channel.id == activeChannel?.id })
-                if (switched || favoriteRemoved) {
+                val selectionRemoved = catalog.loaded && activeChannel != null &&
+                    catalog.channels.none(predicate = { channel -> channel.id == activeChannel?.id })
+                if (switched || selectionRemoved) {
                     clearSelection()
                     if (catalog.channels.isEmpty() && state.value.fullscreen) {
                         exitFullscreen()
@@ -97,8 +102,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     if (refreshed || playing.streams.toSet() != current.streams.toSet()) {
                         val playingUrl = playing.streams.getOrNull(streamIndex)
                         activeChannel = current
-                        attemptedLines.clear()
-                        if (playingUrl != null && playingUrl in current.streams) {
+                        attemptedLines.retainAll(current.streams.toSet())
+                        if (state.value.playback == PlaybackStatus.ERROR) {
+                            streamIndex = current.streams.size
+                            publishLineRanking()
+                        } else if (playingUrl != null && playingUrl in current.streams) {
                             streamIndex = current.streams.indexOf(playingUrl)
                             publishLineRanking()
                             player?.let(block = { currentPlayer ->
@@ -106,7 +114,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                                 watchLineHealth(currentPlayer)
                             })
                         } else {
-                            select(current)
+                            selectProgram(current, wantsPlayback)
                         }
                     }
                 }
@@ -133,9 +141,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (catalog.loaded) {
                     catalogToken = token
                 }
-                val selected = activeChannel
-                val selectionMissing = selected != null && catalog.channels.none(predicate = { channel -> channel.id == selected.id })
-                if (catalog.channels.isNotEmpty() && (activeChannel == null || selectionMissing)) {
+                if (catalog.channels.isNotEmpty() && activeChannel == null) {
                     select(channel = catalog.channels.first())
                 }
                 if (switched) {
@@ -236,6 +242,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         fallback?.cancel()
         timeout?.cancel()
         wantsPlayback = false
+        lineAddress = null
         player?.stop()
         player?.clearMediaItems()
         mutableState.value = state.value.copy(playback = PlaybackStatus.IDLE, line = 0, lineCount = 0, lines = emptyList())
@@ -260,11 +267,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         val settings = app.proxySettings.current
+        if (settings == null) {
+            mutableState.value = state.value.copy(message = R.string.proxy_read_error)
+            return
+        }
+        if (state.value.message == R.string.proxy_read_error) {
+            mutableState.value = state.value.copy(message = null)
+        }
         val client = ProxyHttpClient.create(settings, BuildConfig.STREAM_CONNECT_TIMEOUT_MS, BuildConfig.STREAM_READ_TIMEOUT_MS)
         httpClient = client
         val http = OkHttpDataSource.Factory(client)
+        val loadPolicy = object : DefaultLoadErrorHandlingPolicy() {
+            override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+                val error = loadErrorInfo.exception as? HttpDataSource.InvalidResponseCodeException
+                // Fail over immediately for an unavailable line URL. Segment and transient failures keep Media3's retry policy.
+                if (error != null && error.dataSpec.uri.toString() == lineAddress &&
+                    (error.responseCode == 401 || error.responseCode == 403 || error.responseCode == 404 || error.responseCode == 410)) {
+                    return C.TIME_UNSET
+                }
+                return super.getRetryDelayMsFor(loadErrorInfo)
+            }
+        }
         val created = ExoPlayer.Builder(getApplication())
-            .setMediaSourceFactory(DefaultMediaSourceFactory(http))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(http).setLoadErrorHandlingPolicy(loadPolicy))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .build()
@@ -306,6 +331,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         generation += 1
         fallback?.cancel()
         timeout?.cancel()
+        lineAddress = null
         val current = player
         player = null
         current?.release()
@@ -320,18 +346,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun select(channel: Channel) {
-        val sorted = lineRanking.lines(channel.id, channel.streams)
-        selectLine(channel.copy(streams = sorted.map(transform = { line -> line.url })), 0)
+        val current = state.value.channels.firstOrNull(predicate = { candidate -> candidate.id == channel.id }) ?: return
+        selectProgram(current, playing = true)
     }
 
-    private fun selectLine(channel: Channel, index: Int) {
+    private fun selectProgram(channel: Channel, playing: Boolean): Unit {
+        val sorted = lineRanking.lines(channel.id, channel.streams)
+        selectLine(channel.copy(streams = sorted.map(transform = { line -> line.url })), 0, playing)
+    }
+
+    private fun selectLine(channel: Channel, index: Int, playing: Boolean = true) {
         generation += 1
         fallback?.cancel()
         timeout?.cancel()
         activeChannel = channel
         streamIndex = index
         attemptedLines.clear()
-        wantsPlayback = true
+        wantsPlayback = playing
         mutableState.value = state.value.copy(selectedId = channel.id, selectedName = channel.name, selectedSourceName = channel.sourceName)
         playLine()
         showInformation()
@@ -356,7 +387,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun changeStreamLine(direction: Int) {
         val channel = activeChannel ?: return
         if (channel.streams.size > 1) {
-            val index = Math.floorMod(state.value.line - 1 + direction, channel.streams.size)
+            val index = if (streamIndex !in channel.streams.indices) {
+                if (direction < 0) channel.streams.lastIndex else 0
+            } else {
+                Math.floorMod(streamIndex + direction, channel.streams.size)
+            }
             selectLine(channel, index)
         }
     }
@@ -366,6 +401,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val index = state.value.line - 1
         if (index in channel.streams.indices) {
             selectLine(channel, index)
+        } else {
+            retry()
         }
     }
 
@@ -424,6 +461,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         timeout?.cancel()
         val limit = channel.streams.size
         if (streamIndex >= limit) {
+            lineAddress = null
             current.stop()
             mutableState.value = state.value.copy(playback = PlaybackStatus.ERROR)
             return
@@ -433,7 +471,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             // Reset the decoder before switching between independent live streams.
             current.stop()
         }
-        current.setMediaItem(MediaItem.fromUri(channel.streams[streamIndex]))
+        val address = channel.streams[streamIndex]
+        lineAddress = address
+        current.setMediaItem(MediaItem.fromUri(address))
         current.prepare()
         current.playWhenReady = wantsPlayback
         watchLineHealth(current)

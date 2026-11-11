@@ -1,50 +1,57 @@
 package cn.hdfk7.android.iptv.core.data.network
 
 import cn.hdfk7.android.iptv.core.model.Channel
-import cn.hdfk7.android.iptv.core.model.ChannelAggregation
+import cn.hdfk7.android.iptv.core.model.ChannelNames
 import java.net.URI
 
 /** Extended M3U channel catalog; HLS manifests are media, not channel catalogs. */
 class PlaylistParser {
+    private data class Entry(val name: String, var group: String, val urls: MutableSet<String> = linkedSetOf())
+
+    private val header = Regex("""#EXTM3U(?:\s.*)?""")
+    private val tvgName = Regex("""(?:^|\s)tvg-name="([^"]*)"""")
+    private val groupTitle = Regex("""(?:^|\s)group-title="([^"]*)"""")
+
     fun parse(text: String, sourceUrl: String): List<Channel> {
-        val lines = text.removePrefix("\uFEFF").lineSequence().map(transform = { line -> line.trim() }).toList()
-        require(value = lines.firstOrNull()?.substringBefore(' ') == "#EXTM3U", lazyMessage = { "Expected an extended M3U catalog" })
-        val mediaManifest = lines.any(predicate = { line -> line.startsWith("#EXT-X-") })
-        require(value = !mediaManifest, lazyMessage = { "HLS media manifests are not channel catalogs" })
-        val channels = linkedMapOf<Pair<String, String>, MutableList<String>>()
+        val lines = text.removePrefix("\uFEFF").lineSequence().iterator()
+        require(value = lines.hasNext() && header.matches(lines.next().trim()), lazyMessage = { "Expected an extended M3U catalog" })
+        val base = URI(sourceUrl)
+        val channels = linkedMapOf<String, Entry>()
         var name: String? = null
         var group = ""
-        for (line in lines) {
+        for (rawLine in lines) {
+            val line = rawLine.trim()
+            require(value = !line.startsWith("#EXT-X-"), lazyMessage = { "HLS media manifests are not channel catalogs" })
             if (line.startsWith("#EXTINF:")) {
                 val separator = metadataSeparator(line)
                 name = if (separator >= 0) {
-                    line.substring(separator + 1).trim().ifEmpty(defaultValue = { attribute(line, "tvg-name") })
+                    line.substring(separator + 1).trim().ifEmpty(defaultValue = { attribute(line, tvgName) })
                 } else {
                     null
                 }
-                group = attribute(line, "group-title")
+                group = attribute(line, groupTitle)
             } else if (line.isNotBlank() && !line.startsWith("#")) {
                 val channelName = name
                 name = null
                 if (channelName.isNullOrBlank()) {
                     continue
                 }
-                val uri = runCatching(block = { URI(sourceUrl).resolve(line) }).getOrNull()
-                val supported = uri != null && uri.scheme?.lowercase() in listOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null
-                if (supported) {
-                    val urls = channels.getOrPut(key = group to channelName, defaultValue = { mutableListOf() })
-                    val url = uri.toString()
-                    if (!urls.contains(url)) {
-                        urls.add(url)
+                val uri = runCatching(block = { base.resolve(line) }).getOrNull()
+                if (uri != null && (uri.scheme.equals("http", ignoreCase = true) || uri.scheme.equals("https", ignoreCase = true)) &&
+                    !uri.host.isNullOrBlank() && uri.userInfo == null && (uri.port == -1 || uri.port in 1..65535)) {
+                    val entry = channels.getOrPut(key = ChannelNames.key(channelName), defaultValue = { Entry(ChannelNames.display(channelName), group) })
+                    if (entry.group.isBlank()) {
+                        entry.group = group
                     }
+                    entry.urls.add(uri.toString())
                 }
             }
         }
-        return ChannelAggregation.merge(channels.map(transform = { entry -> Channel(entry.key.second, entry.key.first, entry.value.toList()) }))
+        return channels.values.map(transform = { entry -> Channel(entry.name, entry.group, entry.urls.toList()) })
     }
 
-    private fun attribute(line: String, key: String): String {
-        return Regex("""(?:^|\s)${Regex.escape(key)}="([^"]*)"""").find(line)?.groupValues?.get(1).orEmpty()
+    private fun attribute(line: String, pattern: Regex): String {
+        return pattern.find(line)?.groupValues?.get(1).orEmpty()
     }
 
     private fun metadataSeparator(line: String): Int {
