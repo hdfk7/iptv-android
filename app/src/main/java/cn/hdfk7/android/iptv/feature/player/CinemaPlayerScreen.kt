@@ -390,7 +390,8 @@ private fun CinemaControls(
                         }
                     }), interactive = controlsFocusable)
                 if (state.channels.isNotEmpty()) {
-                    CinemaPlaybackAction(viewModel = viewModel, modifier = actionWidth, interactive = controlsFocusable)
+                    CinemaPlaybackAction(viewModel = viewModel, initialPlayback = state.playback,
+                        modifier = actionWidth, interactive = controlsFocusable)
                 }
                 if (state.selectedId != null) {
                     val favorite = state.selectedId in state.favoriteIds
@@ -418,11 +419,11 @@ private fun CinemaControls(
 }
 
 @Composable
-private fun CinemaPlaybackAction(viewModel: PlayerViewModel, modifier: Modifier, interactive: Boolean): Unit {
+private fun CinemaPlaybackAction(viewModel: PlayerViewModel, initialPlayback: PlaybackStatus, modifier: Modifier, interactive: Boolean): Unit {
     val playbackFlow = remember(viewModel, calculation = {
         viewModel.state.map(transform = { state -> state.playback }).distinctUntilChanged()
     })
-    val playback by playbackFlow.collectAsStateWithLifecycle(initialValue = viewModel.state.value.playback)
+    val playback by playbackFlow.collectAsStateWithLifecycle(initialValue = initialPlayback)
     val playing = playback == PlaybackStatus.PLAYING
     val view = LocalView.current
     // The SurfaceView can keep rendering while the TV retains the old controls layer.

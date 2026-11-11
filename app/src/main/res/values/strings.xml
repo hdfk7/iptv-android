@@ -54,7 +54,6 @@
     <string name="proxy_read_error">无法读取代理配置，请在设置中重新保存</string>
     <string name="app_update_download_too_large">更新包超过 256 MiB 下载限制</string>
     <string name="press_back_again">再按一次返回键退出应用</string>
-    <string name="channel_count">节目 · %1$d</string>
     <string name="app_update_title">检查应用更新</string>
     <string name="app_update_notes">%1$s 版本说明</string>
     <string name="app_update_checking">正在检查更新…</string>
@@ -136,11 +135,6 @@
     <string name="previous_line">上一条线路</string>
     <string name="next_line">下一条线路</string>
     <string name="retry_current_line">重连当前线路</string>
-    <string name="channel_category_cctv">央视频道</string>
-    <string name="channel_category_satellite">卫视频道</string>
-    <string name="channel_category_greater_china">港澳台频道</string>
-    <string name="channel_category_sports">体育频道</string>
-    <string name="channel_category_other">其他频道</string>
     <string name="resume_enabled">启动频道 · 上次观看</string>
     <string name="resume_disabled">启动频道 · 列表首个</string>
     <string name="programme_current">正在播 · %1$s</string>
