@@ -19,6 +19,8 @@ Target Android 14 (API 34); do not call newer platform APIs without guards. Unit
 
 For production releases, run the repository's `upload-release.bat` on Windows or `upload-release.sh` on macOS/Linux. Use the script's default clean build and upload flow unless the user explicitly requests another mode. After publishing, verify the public `latest.json` and confirm that the downloadable APK matches the signed local artifact.
 
+Create or push a Git release tag only when the user explicitly requests that action. A request to commit, push a branch, or publish an APK does not authorize tagging.
+
 Use concise Conventional Commit subjects with a Chinese summary (`feat:完善节目收藏`). Keep each commit focused and describe affected modules and verification in PRs. Ignore build output, IDE caches and local.properties. By the user's explicit instruction, the local APK signing file `signing/sign` and APK_SIGN_* settings in gradle.properties are included as project files and must not be added to ignore rules. Do not print signing passwords in logs or reports. Debug uses .debug application ID suffix; release uses the base ID. APK filenames use app name, build type, version and timestamp.
 
 Refresh on foreground entry and manual action only. Do not schedule periodic refresh. Do not add compatibility paths solely to migrate data or jobs from earlier app versions. Proxy settings apply to playlist and Media3 networking; never send proxy credentials as origin Authorization headers or log secrets.

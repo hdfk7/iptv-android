@@ -219,6 +219,7 @@ internal fun CinemaPlayerScreen(
         PlaybackSurface(
             state = state,
             showPlaybackStatus = !dialogOpen && visiblePanel == TvPanel.Controls,
+            onPlay = if (!television && state.channels.isNotEmpty()) viewModel::togglePlayback else null,
             modifier = Modifier.fillMaxSize().then(surfaceInput)
         )
         if (state.infoVisible && !dialogOpen) {
