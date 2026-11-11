@@ -20,6 +20,7 @@ val FocusInk = Accent
 val BackdropTop = Color(0xFF242B35)
 val BackdropMiddle = Color(0xFF171C25)
 val BackdropBottom = Color(0xFF10141B)
+val CinemaMenuSurface = BackdropBottom.copy(alpha = 0.82f)
 val Gold = Color(0xFFE5BF7B)
 val Error = Color(0xFFFFA49B)
 

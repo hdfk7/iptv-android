@@ -19,6 +19,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -27,10 +28,13 @@ import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.tvDirections
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.DialogSurface
+import cn.hdfk7.android.iptv.core.ui.theme.Muted
 
 @Composable
 internal fun AppUpdateContent(
     message: String,
+    notes: String,
+    notesVersion: String,
     downloading: Boolean,
     validating: Boolean,
     fraction: Float?,
@@ -62,6 +66,23 @@ internal fun AppUpdateContent(
             content = {
                 Text(text = stringResource(R.string.app_update_title), color = Color.White, fontSize = 22.sp)
                 Text(text = message, color = Accent, fontSize = 15.sp)
+                if (notes.isNotBlank() && !downloading) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = {
+                        Text(text = stringResource(R.string.app_update_notes, notesVersion), color = Accent,
+                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        for (line in notes.lineSequence().map(transform = String::trim).filter(predicate = String::isNotEmpty)) {
+                            if (line.startsWith("• ") || line.startsWith("- ")) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
+                                    Text(text = "•", color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                                    Text(text = line.drop(2).trimStart(), color = Muted, fontSize = 14.sp,
+                                        lineHeight = 21.sp, modifier = Modifier.weight(1f))
+                                })
+                            } else {
+                                Text(text = line, color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                            }
+                        }
+                    })
+                }
                 if (downloading) {
                     if (fraction == null || validating) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

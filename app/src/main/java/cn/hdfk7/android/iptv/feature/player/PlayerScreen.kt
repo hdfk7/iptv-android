@@ -134,7 +134,7 @@ private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdat
             Modifier
         }
         Column(
-            modifier = Modifier.fillMaxWidth().background(DialogSurface, RoundedCornerShape(22.dp)).padding(20.dp),
+            modifier = Modifier.fillMaxWidth().background(CinemaMenuSurface, RoundedCornerShape(22.dp)).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = {
                 Row(verticalAlignment = Alignment.CenterVertically, content = {
@@ -150,7 +150,7 @@ private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdat
 
 @Composable
 private fun SettingsMenuContainer(television: Boolean, onClose: () -> Unit, content: @Composable () -> Unit): Unit {
-    Box(modifier = if (television) Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)) else Modifier, contentAlignment = Alignment.Center, content = {
+    Box(modifier = if (television) Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)) else Modifier, contentAlignment = Alignment.Center, content = {
         if (television) {
             Box(modifier = Modifier.width(440.dp), content = { content() })
         } else {
@@ -164,7 +164,9 @@ private fun SettingsEntry(icon: Int, title: String, onClick: () -> Unit, modifie
     TvAction(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        containerColor = ButtonPanel,
+        containerColor = Color.Transparent,
+        focusBorderWidth = 2.dp,
+        showUnfocusedBorder = false,
         content = {
             Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(12.dp))

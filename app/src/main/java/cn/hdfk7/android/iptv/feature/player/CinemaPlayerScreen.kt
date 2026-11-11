@@ -37,6 +37,7 @@ import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.BackdropBottom
+import cn.hdfk7.android.iptv.core.ui.theme.CinemaMenuSurface
 import cn.hdfk7.android.iptv.core.ui.theme.Gold
 import cn.hdfk7.android.iptv.core.ui.theme.Muted
 
@@ -271,20 +272,22 @@ private fun CinemaControls(
     }
     val actions: @Composable () -> Unit = {
         Row(
-            modifier = Modifier.background(BackdropBottom.copy(alpha = 0.68f), RoundedCornerShape(12.dp)).padding(horizontal = 4.dp),
+            modifier = (if (portrait) Modifier.fillMaxWidth() else Modifier)
+                .background(BackdropBottom.copy(alpha = 0.68f), RoundedCornerShape(12.dp)).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = {
-                CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels, modifier = Modifier.focusRequester(channelsFocus))
+                val actionWidth = if (portrait) Modifier.weight(1f) else Modifier
+                CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels, modifier = actionWidth.focusRequester(channelsFocus))
                 if (state.selectedId != null) {
                     val playing = state.playback == PlaybackStatus.PLAYING
                     val favorite = state.selectedId in state.favoriteIds
                     CinemaAction(label = stringResource(if (playing) R.string.pause else R.string.play),
-                        icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = viewModel::togglePlayback)
+                        icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = viewModel::togglePlayback, modifier = actionWidth)
                     CinemaAction(label = stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add),
                         icon = if (favorite) R.drawable.ic_star_filled else R.drawable.ic_star,
-                        tint = if (favorite) Gold else Accent, onClick = viewModel::toggleCurrentFavorite)
+                        tint = if (favorite) Gold else Accent, onClick = viewModel::toggleCurrentFavorite, modifier = actionWidth)
                 }
-                CinemaAction(label = stringResource(R.string.tv_more), onClick = onMore, modifier = Modifier.focusRequester(moreFocus))
+                CinemaAction(label = stringResource(R.string.tv_more), onClick = onMore, modifier = actionWidth.focusRequester(moreFocus))
             }
         )
     }
@@ -312,7 +315,7 @@ private fun CinemaMoreMenu(
     modifier: Modifier
 ): Unit {
     Column(
-        modifier = modifier.background(BackdropBottom.copy(alpha = 0.82f), RoundedCornerShape(12.dp))
+        modifier = modifier.background(CinemaMenuSurface, RoundedCornerShape(12.dp))
             .verticalScroll(rememberScrollState()).padding(8.dp),
         content = {
             CinemaAction(label = stringResource(R.string.library_title), onClick = onSources,

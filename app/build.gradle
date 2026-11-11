@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+def releaseVersion = '1.2.19'
+def releaseNotesFile = layout.projectDirectory.file("release-notes/${releaseVersion}.txt")
+def releaseNotes = providers.fileContents(releaseNotesFile).asText.map { notes -> notes.trim() }.orElse("")
+
 def streamTimeout = { String name, int fallback ->
     def value = providers.gradleProperty(name).getOrElse(fallback.toString())
     if (!value.isInteger() || value.toInteger() <= 0) {
@@ -37,10 +41,11 @@ android {
         applicationId = 'cn.hdfk7.android.iptv'
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = '1.2.18'
+        versionCode = 23
+        versionName = releaseVersion
         def updateManifestUrl = providers.gradleProperty("APP_UPDATE_MANIFEST_URL").getOrElse("")
         buildConfigField "String", "APP_UPDATE_MANIFEST_URL", JsonOutput.toJson(updateManifestUrl)
+        buildConfigField "String", "APP_RELEASE_NOTES", JsonOutput.toJson(releaseNotes.get())
         buildConfigField "boolean", "APP_DEBUG_SWITCH", APP_DEBUG_SWITCH
         buildConfigField "int", "STREAM_CONNECT_TIMEOUT_MS", streamTimeout("STREAM_CONNECT_TIMEOUT_MS", 5000)
         buildConfigField "int", "STREAM_READ_TIMEOUT_MS", streamTimeout("STREAM_READ_TIMEOUT_MS", 5000)
@@ -94,6 +99,7 @@ androidComponents {
         def manifestFile = layout.buildDirectory.file("outputs/update/${variant.name}/latest.json")
         def manifestTask = tasks.register("generate${variantName}UpdateManifest") {
             inputs.dir(apkDirectory)
+            inputs.property("releaseNotes", releaseNotes)
             outputs.file(manifestFile)
             doLast {
                 def artifacts = loader.load(apkDirectory.get())
@@ -103,11 +109,16 @@ androidComponents {
                 def apk = artifacts.elements.first()
                 def target = manifestFile.get().asFile
                 target.parentFile.mkdirs()
-                target.setText(JsonOutput.prettyPrint(JsonOutput.toJson([
+                def manifest = [
                     versionCode: apk.versionCode,
                     versionName: apk.versionName,
                     apkUrl: new File(apk.outputFile).name
-                ])) + System.lineSeparator(), "UTF-8")
+                ]
+                def notes = releaseNotes.get()
+                if (!notes.isEmpty()) {
+                    manifest.releaseNotes = notes
+                }
+                target.setText(JsonOutput.prettyPrint(JsonOutput.toJson(manifest)) + System.lineSeparator(), "UTF-8")
             }
         }
         tasks.matching { it.name == "assemble${variantName}" }.configureEach {

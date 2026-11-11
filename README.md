@@ -146,6 +146,8 @@ JUnit 5 覆盖解析、线路顺序、源管理、跨源收藏、离线缓存、
 
 运行 `./gradlew :app:assembleRelease` 会自动从打包结果生成 `app/build/outputs/update/release/latest.json`。先上传同次构建的 Release APK，再上传 JSON 到同一个 HTTPS 目录。生成的 `apkUrl` 是实际 APK 文件名，应用以接口地址为基准解析，也接受完整 HTTPS 下载地址。Debug 构建有独立的 `outputs/update/debug/latest.json`。
 
+更新说明写入 `app/release-notes/<versionName>.txt`。构建会将说明放入 APK，并写入更新清单的可选 `releaseNotes` 字段。检查到新版时显示新版说明，已是最新或检查暂时失败时显示 APK 自带的本版说明。
+
 打包时用 `-PAPP_UPDATE_MANIFEST_URL=https://example.com/iptv/latest.json` 指定接口，或将同名属性放入本机 Gradle 配置。未配置时，点击检查会显示提示。每次发布递增 APK 的 `versionCode`，保持发行签名一致。
 
 应用按 `versionCode` 比较，确认后通过 HTTPS 下载到私有缓存，上限 256 MiB。校验包名、版本、最低 Android 版本及签名后打开系统安装界面。首次安装可能需要允许 IPTV 安装未知来源应用，授权返回后继续。

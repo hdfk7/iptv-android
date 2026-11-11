@@ -31,7 +31,7 @@ import java.io.IOException
 
 class AppUpdateFileProvider : FileProvider()
 
-internal data class AppRelease(val versionCode: Int, val versionName: String, val downloadUrl: String)
+internal data class AppRelease(val versionCode: Int, val versionName: String, val downloadUrl: String, val notes: String = "")
 
 private suspend fun readAppRelease(address: String): AppRelease {
     val manifestUrl = address.toHttpUrlOrNull()
@@ -46,7 +46,8 @@ private suspend fun readAppRelease(address: String): AppRelease {
         val downloadUrl = requireNotNull(manifestUrl.resolve(manifest.getString("apkUrl")))
         require(versionCode > 0 && versionName.isNotBlank() && downloadUrl.isHttps && downloadUrl != manifestUrl &&
             downloadUrl.username.isEmpty() && downloadUrl.password.isEmpty())
-        return AppRelease(versionCode, versionName, downloadUrl.toString())
+        val notes = (manifest.opt("releaseNotes") as? String).orEmpty().trim().take(600)
+        return AppRelease(versionCode, versionName, downloadUrl.toString(), notes)
     } catch (_: Exception) {
         throw AppUpdateDownloadException(R.string.app_update_manifest_invalid)
     }
@@ -212,6 +213,12 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     }
     val current = progress
     val fraction = current?.fraction
+    val notes = if (update != null) {
+        update.notes
+    } else {
+        BuildConfig.APP_RELEASE_NOTES
+    }
+    val notesVersion = update?.versionName ?: BuildConfig.VERSION_NAME
     val message = when {
         validating -> stringResource(R.string.app_update_verifying)
         downloading && current != null && fraction != null -> stringResource(R.string.app_update_progress, Formatter.formatFileSize(context, current.downloaded), Formatter.formatFileSize(context, current.total), (fraction * 100).toInt())
@@ -226,6 +233,8 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     }
     AppUpdateContent(
         message = message,
+        notes = notes,
+        notesVersion = notesVersion,
         downloading = downloading,
         validating = validating,
         fraction = fraction,
