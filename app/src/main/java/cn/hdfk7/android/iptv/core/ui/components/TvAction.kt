@@ -20,6 +20,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,9 +37,14 @@ import androidx.compose.ui.unit.dp
 val LocalTvActionFocused = staticCompositionLocalOf(defaultFactory = { false })
 
 @Composable
-fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, enabled: Boolean = true, shape: Shape = RoundedCornerShape(16.dp), focusScale: Float = 1f, containerColor: Color = Panel, focusFill: Color = FocusFill, focusInk: Color = FocusInk, focusBorderWidth: Dp = 1.dp, contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 6.dp), focusHighlight: Boolean? = null, showUnfocusedBorder: Boolean = true, fitContentHeight: Boolean = false, content: @Composable RowScope.() -> Unit) {
+fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, enabled: Boolean = true, shape: Shape = RoundedCornerShape(FocusCornerRadius), focusScale: Float = 1f, containerColor: Color = Panel, focusFill: Color = FocusFill, focusInk: Color = FocusInk, focusBorderWidth: Dp = FocusStroke, contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 6.dp), focusHighlight: Boolean? = null, showUnfocusedBorder: Boolean = true, fitContentHeight: Boolean = false, content: @Composable RowScope.() -> Unit) {
     var hasFocus by remember(calculation = { mutableStateOf(false) })
     val focused = focusHighlight ?: hasFocus
+    val view = LocalView.current
+    LaunchedEffect(focused, block = {
+        withFrameNanos(onFrame = { _ -> })
+        view.postInvalidateOnAnimation()
+    })
     val scale by animateFloatAsState(targetValue = if (focused && enabled) focusScale else 1f, animationSpec = tween(durationMillis = 140), label = "buttonFocusScale")
     val container = when {
         focused -> {
@@ -50,10 +58,15 @@ fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boole
         }
     }
     val height = if (fitContentHeight) Modifier.defaultMinSize(minHeight = 46.dp) else Modifier.height(46.dp)
+    val scaling = if (focusScale == 1f) {
+        Modifier
+    } else {
+        Modifier.graphicsLayer(block = { scaleX = scale; scaleY = scale })
+    }
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.then(height).graphicsLayer(block = { scaleX = scale; scaleY = scale }).onFocusChanged(onFocusChanged = { focus -> hasFocus = focus.isFocused }),
+        modifier = modifier.then(height).then(scaling).onFocusChanged(onFocusChanged = { focus -> hasFocus = focus.isFocused }),
         shape = shape,
         border = when {
             focused -> BorderStroke(focusBorderWidth, FocusBorder)
@@ -71,7 +84,7 @@ fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boole
 
 @Composable
 fun TvIconButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = Color.White, selected: Boolean = false, enabled: Boolean = true) {
-    TvAction(modifier = modifier.size(46.dp), onClick = onClick, selected = selected, enabled = enabled, shape = CircleShape, focusScale = 1.04f, containerColor = ButtonPanel, focusBorderWidth = 1.5.dp, contentPadding = PaddingValues(0.dp), content = {
+    TvAction(modifier = modifier.size(46.dp), onClick = onClick, selected = selected, enabled = enabled, shape = CircleShape, focusScale = 1f, containerColor = ButtonPanel, focusBorderWidth = FocusStroke, contentPadding = PaddingValues(0.dp), content = {
         Icon(painter = painterResource(icon), contentDescription = description, tint = if (LocalTvActionFocused.current) FocusInk else tint, modifier = Modifier.size(20.dp))
     })
 }

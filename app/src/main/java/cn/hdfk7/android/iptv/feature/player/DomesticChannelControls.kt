@@ -1,11 +1,18 @@
 package cn.hdfk7.android.iptv.feature.player
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -35,9 +42,28 @@ internal fun ChannelGroupControls(
     groups: List<DomesticChannelGroup>,
     selected: DomesticChannelGroup,
     television: Boolean,
-    onSelect: (DomesticChannelGroup) -> Unit
+    onSelect: (DomesticChannelGroup) -> Unit,
+    modifier: Modifier = Modifier,
+    onEnterChannels: () -> Unit = {}
 ): Unit {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), content = {
+    var focused by remember(calculation = { mutableStateOf(false) })
+    val remote = if (television) {
+        Modifier.onFocusChanged(onFocusChanged = { focus -> focused = focus.isFocused })
+            .onPreviewKeyEvent(onPreviewKeyEvent = { event ->
+                when (event.key) {
+                    Key.DirectionDown, Key.DirectionUp, Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                            onEnterChannels()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }).focusable()
+    } else {
+        Modifier
+    }
+    Row(modifier = modifier.fillMaxWidth().then(remote), horizontalArrangement = Arrangement.spacedBy(2.dp), content = {
         for (group in groups) {
             val label = when (group) {
                 DomesticChannelGroup.ALL -> R.string.domestic_group_all
@@ -49,6 +75,7 @@ internal fun ChannelGroupControls(
             TvAction(
                 onClick = { onSelect(group) },
                 selected = group == selected,
+                focusHighlight = if (television) focused && group == selected else null,
                 modifier = Modifier.weight(1f).height(if (television) 32.dp else 44.dp)
                     .focusProperties(scope = { canFocus = !television }),
                 shape = RoundedCornerShape(8.dp),

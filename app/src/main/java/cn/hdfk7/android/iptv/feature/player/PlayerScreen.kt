@@ -22,12 +22,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.app.IptvApplication
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 import cn.hdfk7.android.iptv.core.ui.components.tvDirections
+import cn.hdfk7.android.iptv.core.ui.components.requestWhenReady
 import cn.hdfk7.android.iptv.core.ui.theme.*
 import cn.hdfk7.android.iptv.feature.proxy.ProxySettingsDialog
 import cn.hdfk7.android.iptv.feature.update.AppUpdateDialog
@@ -43,7 +45,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
     val guideChannel = state.channels.firstOrNull(predicate = { channel -> channel.id == guideChannelId })
     var settingsMenuEntry by remember(calculation = { mutableStateOf(SettingsPage.Proxy) })
     val app = LocalContext.current.applicationContext as IptvApplication
-    val selectedRowFocus = remember(key1 = viewModel, calculation = { ChannelListFocus(viewModel.channelFocusMemory) })
+    val selectedRowFocus = remember(key1 = viewModel, calculation = { ChannelListFocus() })
     val dialogOpen = sourceUi.open || settingsPage != null || guideChannel != null
     LaunchedEffect(key1 = dialogOpen, block = {
         onDialogStateChanged(dialogOpen)
@@ -123,10 +125,7 @@ private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdat
                 inputMode.requestInputMode(InputMode.Keyboard)
                 withFrameNanos(onFrame = { })
                 val initialFocus = if (entry == SettingsPage.Update) updateFocus else proxyFocus
-                if (!initialFocus.requestFocus()) {
-                    withFrameNanos(onFrame = { })
-                    initialFocus.requestFocus()
-                }
+                initialFocus.requestWhenReady()
             }
         })
         val closeNavigation = if (television) {
@@ -177,13 +176,20 @@ private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdat
 
 @Composable
 private fun SettingsMenuContainer(television: Boolean, onClose: () -> Unit, content: @Composable () -> Unit): Unit {
-    Box(modifier = if (television) Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)) else Modifier, contentAlignment = Alignment.Center, content = {
-        if (television) {
-            Box(modifier = Modifier.width(440.dp), content = { content() })
-        } else {
-            Dialog(onDismissRequest = onClose, content = content)
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = !television, decorFitsSystemWindows = !television),
+        content = {
+            if (television) {
+                Box(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
+                    .background(Color.Black.copy(alpha = 0.32f)), contentAlignment = Alignment.Center, content = {
+                    Box(modifier = Modifier.width(440.dp), content = { content() })
+                })
+            } else {
+                content()
+            }
         }
-    })
+    )
 }
 
 @Composable

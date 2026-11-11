@@ -93,6 +93,12 @@ class MainActivity : ComponentActivity() {
     // Intercept TV BACK before focused Compose controls; this is Activity's public callback.
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (television && !playerDialogOpen && event.keyCode == KeyEvent.KEYCODE_MENU) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                viewModel.requestMoreMenu()
+            }
+            return true
+        }
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (playerDialogOpen) {
                 return super.dispatchKeyEvent(event)

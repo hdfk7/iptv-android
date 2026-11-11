@@ -36,13 +36,13 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import cn.hdfk7.android.iptv.core.data.network.ProxyHttpClient
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.BuildConfig
 import cn.hdfk7.android.iptv.core.model.ChannelAggregation
-import cn.hdfk7.android.iptv.core.model.ChannelFocusMemory
 import cn.hdfk7.android.iptv.app.IptvApplication
 import cn.hdfk7.android.iptv.core.model.SourceLibrary
 import cn.hdfk7.android.iptv.core.model.LibraryException
@@ -70,7 +70,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val app = application as IptvApplication
     private val repository = app.playlistRepository
     private val audio = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    internal val channelFocusMemory = ChannelFocusMemory()
     private val mutableState = MutableStateFlow(PlayerState(fixedVolume = audio.isVolumeFixed))
     val state = mutableState.asStateFlow()
     var player: ExoPlayer? by mutableStateOf(null)
@@ -89,7 +88,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         writeHistory = { program, url, quality -> history.write(history.key(historyScope, program, url), quality) }
     )
     private var resumePending = viewing.getBoolean("resume", false)
-    private var autoPlayPending = resumePending
+    private var autoPlayPending = true
     var resumeEnabled: Boolean by mutableStateOf(resumePending)
         private set
 
@@ -98,7 +97,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewing.edit().putBoolean("resume", resumeEnabled).apply()
         if (!resumeEnabled && resumePending) {
             resumePending = false
-            autoPlayPending = false
         }
     }
 
@@ -139,6 +137,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var firstFrameMs = 0L
     private var tuneStartedAt = 0L
     private var fallbackStartedAt = 0L
+    internal var moreMenuRequested: Boolean by mutableStateOf(false)
+        private set
+
+    fun requestMoreMenu(): Unit {
+        moreMenuRequested = true
+        showInformation()
+    }
+
+    internal fun consumeMoreMenuRequest(): Unit {
+        moreMenuRequested = false
+    }
+
     private var infoTimer: Job? = null
     private var informationHeld = false
     private var informationDeadline = 0L
@@ -216,13 +226,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     catalogToken = token
                 }
                 if (catalog.loaded && catalog.channels.isNotEmpty() && activeChannel == null) {
-                    val remembered = if (resumePending || !autoPlayPending) {
+                    val remembered = if (resumePending) {
                         viewing.getString("channel:${catalog.library.activeSourceId}", null)
                     } else {
                         null
                     }
                     val restored = catalog.channels.firstOrNull(predicate = { channel -> channel.id == remembered })
-                    val playing = autoPlayPending && (remembered == null || restored != null)
+                    val playing = autoPlayPending
                     previewing = !playing
                     selectProgram(restored ?: catalog.channels.first(), playing)
                 }
@@ -487,28 +497,35 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             .setHandleAudioBecomingNoisy(true)
             .build()
         created.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                when (playbackState) {
-                    Player.STATE_IDLE -> {
-                        // Preserve explicit idle/error state during source changes.
-                    }
+            override fun onPlaybackStateChanged(playbackState: Int): Unit {
+                if (playbackState == Player.STATE_ENDED) {
+                    nextLine()
+                }
+            }
+
+            override fun onEvents(player: Player, events: Player.Events): Unit {
+                if (player !== this@PlayerViewModel.player || previewing) {
+                    return
+                }
+                val manifest = player.currentManifest as? HlsManifest
+                if (player.playbackState == Player.STATE_READY && activeChannel?.guideRefs?.isNotEmpty() == true &&
+                    manifest?.mediaPlaylist?.hasEndTag == true) {
+                    // A completed recording cannot follow this channel's live programme schedule.
+                    nextLine()
+                    return
+                }
+                when (player.playbackState) {
                     Player.STATE_BUFFERING -> {
-                        if (!previewing) {
-                            mutableState.value = state.value.copy(playback = PlaybackStatus.LOADING)
-                        }
+                        mutableState.value = state.value.copy(playback = PlaybackStatus.LOADING)
                     }
                     Player.STATE_READY -> {
                         updatePlayingState()
-                    }
-                    Player.STATE_ENDED -> {
-                        nextLine()
                     }
                 }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (created.playbackState == Player.STATE_READY) {
-                    updatePlayingState()
                     val tracks = created.currentTracks
                     if (isPlaying && (firstFrameMs > 0L ||
                             (tracks.isTypeSelected(C.TRACK_TYPE_AUDIO) && !tracks.isTypeSelected(C.TRACK_TYPE_VIDEO)))) {
@@ -653,7 +670,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             Math.floorMod(current + direction, channels.size)
         }
         val channel = channels[next]
-        channelFocusMemory.remember(state.value.activeSourceId, channel.id)
         select(channel)
     }
 

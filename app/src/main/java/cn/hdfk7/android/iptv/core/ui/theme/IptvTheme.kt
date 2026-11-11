@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 val Accent = Color(0xFFF3F6FA)
 val Muted = Color(0xFFBFC7D3)
@@ -14,6 +15,8 @@ val DialogSurface = Color(0xFF202630)
 val SelectedPanel = Color(0xFF303D4F)
 val Border = Color(0xFF3B4553)
 val Divider = Color(0xFF536071)
+val FocusCornerRadius = 8.dp
+val FocusStroke = 2.dp
 val FocusFill = Color(0xFF395673)
 val FocusBorder = Color(0xFF8CACCF)
 val FocusInk = Accent

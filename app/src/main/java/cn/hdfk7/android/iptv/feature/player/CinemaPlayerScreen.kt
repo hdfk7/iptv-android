@@ -1,21 +1,21 @@
 package cn.hdfk7.android.iptv.feature.player
 
-import android.media.AudioManager
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -25,7 +25,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -38,10 +38,8 @@ import cn.hdfk7.android.iptv.core.data.repository.LibraryRules
 import cn.hdfk7.android.iptv.core.model.RecentChannels
 import cn.hdfk7.android.iptv.core.model.DomesticChannelGroup
 import cn.hdfk7.android.iptv.core.model.groupDomesticChannels
-import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.BackdropBottom
-import cn.hdfk7.android.iptv.core.ui.theme.CinemaMenuSurface
 import cn.hdfk7.android.iptv.core.ui.theme.Gold
 import cn.hdfk7.android.iptv.core.ui.theme.Muted
 
@@ -61,17 +59,20 @@ internal fun CinemaPlayerScreen(
 ): Unit {
     var panel by remember(calculation = { mutableStateOf(TvPanel.Controls) })
     var returnToMore by remember(calculation = { mutableStateOf(false) })
-    var opener by remember(calculation = { mutableIntStateOf(KeyEvent.KEYCODE_UNKNOWN) })
+    val openingKey = remember(calculation = { TvOpeningKey() })
     val surfaceFocus = remember(calculation = { FocusRequester() })
     val channelsFocus = remember(calculation = { FocusRequester() })
     val moreFocus = remember(calculation = { FocusRequester() })
-    val firstMenuFocus = remember(calculation = { FocusRequester() })
-    val guideFocus = remember(calculation = { FocusRequester() })
+    var returnToSettings by remember(calculation = { mutableStateOf(false) })
+    val groupFocus = remember(calculation = { FocusRequester() })
+    var groupHasFocus by remember(calculation = { mutableStateOf(false) })
+    var navigatingGroups by remember(calculation = { mutableStateOf(false) })
     val inputMode = LocalInputModeManager.current
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val hasChannels = state.channels.isNotEmpty()
+    var browsedChannelId by remember(state.activeSourceId, state.selectedId, calculation = { mutableStateOf(state.selectedId) })
     val guideChannel = state.channels.firstOrNull(predicate = { channel ->
-        channel.id == state.selectedId && channel.guideRefs.isNotEmpty()
+        channel.id == browsedChannelId && channel.guideRefs.isNotEmpty()
     })
     val domestic = state.sources.any(predicate = { source -> source.id == state.activeSourceId && LibraryRules.isDomestic(source) })
     val groups = remember(domestic, state.channels, state.recentChannelIds, calculation = {
@@ -97,16 +98,26 @@ internal fun CinemaPlayerScreen(
     val keepFocusInDrawer = television && visiblePanel == TvPanel.Channels && availableGroups.size > 1 && hasChannels
     val keepFocusInMore = television && visiblePanel == TvPanel.More
     val showPanel: (TvPanel) -> Unit = { target ->
+        navigatingGroups = false
+        if (target == TvPanel.More) {
+            returnToSettings = false
+        }
         returnToMore = target == TvPanel.More || (target == TvPanel.Controls && panel == TvPanel.More)
         panel = target
         viewModel.showInformation()
     }
-    val dismiss: () -> Unit = {
-        if (panel == TvPanel.Controls) {
-            viewModel.hideInformation()
-        } else {
-            panel = TvPanel.Controls
+    LaunchedEffect(viewModel.moreMenuRequested, block = {
+        if (viewModel.moreMenuRequested && !dialogOpen) {
+            showPanel(TvPanel.More)
+            viewModel.consumeMoreMenuRequest()
         }
+    })
+    val dismiss: () -> Unit = {
+        panel = TvPanel.Controls
+        groupHasFocus = false
+        navigatingGroups = false
+        returnToMore = false
+        viewModel.hideInformation()
     }
     BackHandler(enabled = state.infoVisible && !dialogOpen, onBack = dismiss)
     LaunchedEffect(dialogOpen, visiblePanel, block = {
@@ -124,7 +135,7 @@ internal fun CinemaPlayerScreen(
                 returnToMore = false
                 surfaceFocus.requestFocus()
             }
-            visiblePanel == TvPanel.More -> firstMenuFocus.requestFocus()
+            visiblePanel == TvPanel.More -> Unit
             visiblePanel == TvPanel.Channels && hasChannels -> Unit
             returnToMore -> moreFocus.requestFocus()
             else -> channelsFocus.requestFocus()
@@ -132,10 +143,7 @@ internal fun CinemaPlayerScreen(
     })
     BoxWithConstraints(modifier = Modifier.fillMaxSize().onPreviewKeyEvent(onPreviewKeyEvent = { event ->
         val key = event.nativeKeyEvent
-        if (key.keyCode == opener) {
-            if (key.action == KeyEvent.ACTION_UP) {
-                opener = KeyEvent.KEYCODE_UNKNOWN
-            }
+        if (openingKey.consume(key.keyCode, key.downTime, released = key.action == KeyEvent.ACTION_UP)) {
             return@onPreviewKeyEvent true
         }
         if (!television || dialogOpen || key.action != KeyEvent.ACTION_DOWN) {
@@ -144,9 +152,9 @@ internal fun CinemaPlayerScreen(
         if (state.infoVisible) {
             viewModel.showInformation()
         }
-        if (visiblePanel == TvPanel.Channels && availableGroups.size > 1 &&
+        if (visiblePanel == TvPanel.Channels && groupHasFocus && availableGroups.size > 1 &&
             (key.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || key.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)) {
-            opener = key.keyCode
+            openingKey.record(key.keyCode, key.downTime)
             if (key.repeatCount == 0) {
                 val direction = if (key.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
                 val index = Math.floorMod(availableGroups.indexOf(activeGroup) + direction, availableGroups.size)
@@ -156,9 +164,9 @@ internal fun CinemaPlayerScreen(
         }
         when (key.keyCode) {
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO -> {
-                opener = key.keyCode
+                openingKey.record(key.keyCode, key.downTime)
                 if (key.repeatCount == 0) {
-                    showPanel(if (key.keyCode == KeyEvent.KEYCODE_MENU && state.infoVisible) TvPanel.More else TvPanel.Controls)
+                    showPanel(if (key.keyCode == KeyEvent.KEYCODE_MENU) TvPanel.More else TvPanel.Controls)
                 }
                 true
             }
@@ -175,14 +183,24 @@ internal fun CinemaPlayerScreen(
                 }
                 true
             }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (visiblePanel != TvPanel.Controls || state.infoVisible) {
+                    return@onPreviewKeyEvent false
+                }
+                openingKey.record(key.keyCode, key.downTime)
+                if (key.repeatCount == 0) {
+                    showPanel(TvPanel.Channels)
+                }
+                true
+            }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
-            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (state.infoVisible) {
                     return@onPreviewKeyEvent false
                 }
-                opener = key.keyCode
+                openingKey.record(key.keyCode, key.downTime)
                 if (key.repeatCount == 0) {
-                    showPanel(if (key.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) TvPanel.Channels else TvPanel.Controls)
+                    showPanel(TvPanel.Controls)
                 }
                 true
             }
@@ -239,6 +257,7 @@ internal fun CinemaPlayerScreen(
                 onChannels = { showPanel(if (visiblePanel == TvPanel.Channels) TvPanel.Controls else TvPanel.Channels) },
                 onMore = { showPanel(if (visiblePanel == TvPanel.More) TvPanel.Controls else TvPanel.More) },
                 portrait = portrait,
+                television = television,
                 controlsFocusable = !keepFocusInDrawer && !keepFocusInMore,
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .then(controlInsets)
@@ -248,8 +267,13 @@ internal fun CinemaPlayerScreen(
                 TvPanel.Controls -> Unit
                 TvPanel.Channels -> key(state.activeSourceId, block = {
                     ChannelPanel(
-                        state = state.copy(channels = groups[activeGroup] ?: state.channels),
+                        state = state,
+                        channels = groups[activeGroup].orEmpty(),
                         onSelect = viewModel::select,
+                        onChannelFocused = { channel ->
+                            navigatingGroups = false
+                            browsedChannelId = channel.id
+                        },
                         modifier = if (portrait) {
                             Modifier.align(Alignment.BottomCenter).then(controlInsets).padding(start = inset, end = inset, bottom = 116.dp)
                                 .fillMaxWidth().fillMaxHeight(0.46f)
@@ -257,42 +281,44 @@ internal fun CinemaPlayerScreen(
                             Modifier.align(Alignment.TopStart).then(controlInsets).padding(start = inset, top = 24.dp, bottom = if (television) 86.dp else 76.dp)
                                 .width(minOf(248.dp, maxWidth * 0.40f)).fillMaxHeight()
                         },
-                        compact = true,
                         television = television,
-                        requestInitialFocus = false,
-                        onInitialFocus = {},
                         selectedRowFocus = selectedRowFocus,
-                        videoFocus = surfaceFocus,
                         onConfirmSelect = {
                             panel = TvPanel.Controls
                             viewModel.hideInformation()
                         },
-                        onRight = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
-                        onLeftToHeader = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
-                        onTopBoundary = {
+                        onRight = {
                             if (guideChannel != null) {
-                                guideFocus.requestFocus()
+                                onGuide(guideChannel.id)
+                            }
+                        },
+                        onLeftToHeader = {
+                            if (availableGroups.size > 1) {
+                                navigatingGroups = true
+                                groupFocus.requestFocus()
                             } else if (!keepFocusInDrawer) {
                                 channelsFocus.requestFocus()
                             }
                         },
                         onBottomBoundary = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
-                        cinema = true,
                         domestic = domestic,
                         groupKey = activeGroup.name,
-                        requestDrawerFocus = television && windowFocused,
-                        headerAction = {
-                            if (guideChannel != null) {
-                                TvAction(onClick = { onGuide(guideChannel.id) },
-                                    modifier = Modifier.focusRequester(guideFocus),
-                                    contentPadding = PaddingValues(horizontal = 8.dp), content = {
-                                        Text(text = stringResource(R.string.guide_action), fontSize = 12.sp, maxLines = 1)
-                                    })
-                            }
-                        },
+                        requestDrawerFocus = television && windowFocused && !dialogOpen && !navigatingGroups,
                         groupControls = {
                             if (availableGroups.size > 1) {
-                                ChannelGroupControls(availableGroups, activeGroup, television, onSelect = { group -> selectedGroup = group })
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp), content = {
+                                    ChannelGroupControls(availableGroups, activeGroup, television,
+                                        modifier = Modifier.focusRequester(groupFocus).onFocusChanged(onFocusChanged = { focus ->
+                                            groupHasFocus = focus.hasFocus
+                                        }),
+                                        onEnterChannels = {
+                                            navigatingGroups = false
+                                            selectedRowFocus.restore()
+                                        },
+                                        onSelect = { group ->
+                                            selectedGroup = group
+                                        })
+                                })
                             }
                         }
                     )
@@ -301,13 +327,14 @@ internal fun CinemaPlayerScreen(
                     state = state,
                     viewModel = viewModel,
                     television = television,
-                    firstFocus = firstMenuFocus,
+                    restoreSettings = returnToSettings,
+                    onClose = dismiss,
                     onSources = {
                         panel = TvPanel.Controls
                         onSources()
                     },
                     onSettings = {
-                        panel = TvPanel.Controls
+                        returnToSettings = true
                         onSettings()
                     },
                     modifier = Modifier.align(if (portrait) Alignment.BottomCenter else Alignment.BottomEnd)
@@ -330,6 +357,7 @@ private fun CinemaControls(
     onChannels: () -> Unit,
     onMore: () -> Unit,
     portrait: Boolean,
+    television: Boolean,
     controlsFocusable: Boolean,
     modifier: Modifier
 ): Unit {
@@ -350,12 +378,19 @@ private fun CinemaControls(
             content = {
                 val actionWidth = if (portrait) Modifier.weight(1f) else Modifier
                 CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels,
-                    modifier = actionWidth.focusRequester(channelsFocus), interactive = controlsFocusable)
+                    modifier = actionWidth.focusRequester(channelsFocus).onPreviewKeyEvent(onPreviewKeyEvent = { event ->
+                        val native = event.nativeKeyEvent
+                        if (television && native.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                            if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
+                                onChannels()
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    }), interactive = controlsFocusable)
                 if (state.channels.isNotEmpty()) {
-                    val playing = state.playback == PlaybackStatus.PLAYING
-                    CinemaAction(label = stringResource(if (playing) R.string.pause else R.string.play),
-                        icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play, onClick = viewModel::togglePlayback,
-                        modifier = actionWidth, interactive = controlsFocusable)
+                    CinemaPlaybackAction(viewModel = viewModel, modifier = actionWidth, interactive = controlsFocusable)
                 }
                 if (state.selectedId != null) {
                     val favorite = state.selectedId in state.favoriteIds
@@ -383,83 +418,23 @@ private fun CinemaControls(
 }
 
 @Composable
-private fun CinemaMoreMenu(
-    state: PlayerState,
-    viewModel: PlayerViewModel,
-    television: Boolean,
-    firstFocus: FocusRequester,
-    onSources: () -> Unit,
-    onSettings: () -> Unit,
-    modifier: Modifier
-): Unit {
-    Column(
-        modifier = modifier.background(CinemaMenuSurface, RoundedCornerShape(12.dp))
-            .verticalScroll(rememberScrollState()).padding(8.dp),
-        content = {
-            CinemaAction(label = stringResource(R.string.library_title), onClick = onSources,
-                modifier = Modifier.fillMaxWidth().focusRequester(firstFocus))
-            CinemaAction(label = stringResource(R.string.refresh), onClick = viewModel::refreshManually, modifier = Modifier.fillMaxWidth())
-            if (!television && state.channels.size > 1) {
-                Row(content = {
-                    CinemaAction(label = stringResource(R.string.previous), onClick = { viewModel.changeChannel(-1) }, modifier = Modifier.weight(1f))
-                    CinemaAction(label = stringResource(R.string.next), onClick = { viewModel.changeChannel(1) }, modifier = Modifier.weight(1f))
-                })
-            }
-            if (state.selectedId != null) {
-                CinemaAction(label = stringResource(R.string.retry_current_line), onClick = viewModel::retryCurrentLine, modifier = Modifier.fillMaxWidth())
-                if (state.lineCount > 0) {
-                    Text(text = stringResource(R.string.tv_line_status, state.line, state.lineCount), color = Muted, fontSize = 12.sp,
-                        modifier = Modifier.padding(start = 12.dp, top = 5.dp))
-                }
-                if (state.lineCount > 1) {
-                    Row(content = {
-                        CinemaAction(label = stringResource(R.string.previous_line), onClick = { viewModel.changeStreamLine(-1) }, modifier = Modifier.weight(1f))
-                        CinemaAction(label = stringResource(R.string.next_line), onClick = { viewModel.changeStreamLine(1) }, modifier = Modifier.weight(1f))
-                    })
-                }
-            }
-            if (state.fixedVolume) {
-                Text(text = stringResource(R.string.fixed_volume), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
-            } else {
-                Row(content = {
-                    CinemaAction(label = stringResource(R.string.volume_down), onClick = { viewModel.changeVolume(AudioManager.ADJUST_LOWER) }, modifier = Modifier.weight(1f))
-                    CinemaAction(label = stringResource(R.string.volume_up), onClick = { viewModel.changeVolume(AudioManager.ADJUST_RAISE) }, modifier = Modifier.weight(1f))
-                })
-            }
-            CinemaAction(label = stringResource(R.string.settings_title), onClick = onSettings, modifier = Modifier.fillMaxWidth())
-        }
-    )
-}
-
-@Composable
-private fun CinemaAction(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    icon: Int? = null,
-    tint: Color = Accent,
-    interactive: Boolean = true
-): Unit {
-    val labelContent: @Composable () -> Unit = {
-        if (icon != null) {
-            Icon(painter = painterResource(icon), contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
-        } else {
-            Text(text = label, color = Accent, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-    if (!interactive) {
-        Box(modifier = modifier.height(46.dp).defaultMinSize(minWidth = 58.dp).padding(horizontal = 12.dp),
-            contentAlignment = Alignment.Center, content = { labelContent() })
-        return
-    }
-    TvAction(
-        onClick = onClick,
+private fun CinemaPlaybackAction(viewModel: PlayerViewModel, modifier: Modifier, interactive: Boolean): Unit {
+    val playbackFlow = remember(viewModel, calculation = {
+        viewModel.state.map(transform = { state -> state.playback }).distinctUntilChanged()
+    })
+    val playback by playbackFlow.collectAsStateWithLifecycle(initialValue = viewModel.state.value.playback)
+    val playing = playback == PlaybackStatus.PLAYING
+    val view = LocalView.current
+    // The SurfaceView can keep rendering while the TV retains the old controls layer.
+    LaunchedEffect(playback, block = {
+        withFrameNanos(onFrame = { _ -> })
+        view.postInvalidateOnAnimation()
+    })
+    CinemaAction(
+        label = stringResource(if (playing) R.string.pause else R.string.play),
+        icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play,
+        onClick = viewModel::togglePlayback,
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        containerColor = Color.Transparent,
-        focusBorderWidth = 2.dp,
-        showUnfocusedBorder = false,
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        content = { labelContent() }
+        interactive = interactive
     )
 }
