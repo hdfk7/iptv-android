@@ -24,7 +24,6 @@ data class PlayerState(
     val lineCount: Int = 0,
     val lines: List<PlaybackLine> = emptyList(),
     val fixedVolume: Boolean = false,
-    val fullscreen: Boolean = false,
     val infoVisible: Boolean = false,
     val message: Int? = null
 )

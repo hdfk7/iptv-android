@@ -14,7 +14,6 @@
     <string name="updated">列表更新：%1$s</string>
     <string name="stale">缓存已超过一天</string>
     <string name="loading">连接中 · %1$d/%2$d</string>
-    <string name="playing">正在直播</string>
     <string name="paused">已暂停</string>
     <string name="stream_error">线路不可用</string>
     <string name="library_title">源管理</string>
@@ -42,7 +41,6 @@
     <string name="favorite_remove">取消收藏</string>
     <string name="source_aggregate">自动汇总各源收藏</string>
     <string name="channel_number">%1$03d</string>
-    <string name="fullscreen">全屏</string>
     <string name="proxy_title">HTTP 代理</string>
     <string name="proxy_on">已开启</string>
     <string name="proxy_off">已关闭</string>
@@ -55,7 +53,6 @@
     <string name="proxy_invalid">请检查 IP、端口（1–65535）及认证信息</string>
     <string name="proxy_read_error">无法读取代理配置，请在设置中重新保存</string>
     <string name="app_update_download_too_large">更新包超过 256 MiB 下载限制</string>
-    <string name="exit_fullscreen">退出全屏</string>
     <string name="press_back_again">再按一次返回键退出应用</string>
     <string name="channel_count">节目 · %1$d</string>
     <string name="app_update_title">检查应用更新</string>
@@ -105,8 +102,10 @@
     <string name="app_update_retry_download">重新下载</string>
     <string name="app_update_cancel_download">取消下载</string>
     <string name="app_update_close_short">关闭</string>
-    <string name="app_update_close">关闭更新窗口</string>
     <string name="settings_title">设置</string>
+    <string name="tv_channels">频道</string>
+    <string name="tv_more">更多</string>
+    <string name="tv_line_status">线路 %1$d / %2$d</string>
     <string name="settings_close">关闭设置</string>
     <string name="previous_line">上一条线路</string>
     <string name="next_line">下一条线路</string>

@@ -86,9 +86,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     catalog.channels.none(predicate = { channel -> channel.id == activeChannel?.id })
                 if (switched || selectionRemoved) {
                     clearSelection()
-                    if (catalog.channels.isEmpty() && state.value.fullscreen) {
-                        exitFullscreen()
-                    }
                 }
                 val playing = activeChannel
                 val current = catalog.channels.firstOrNull(predicate = { channel -> channel.id == playing?.id })
@@ -171,19 +168,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         refresh()
-    }
-
-    fun enterFullscreen() {
-        if (activeChannel == null) {
-            return
-        }
-        mutableState.value = state.value.copy(fullscreen = true)
-        setPlayback(true)
-    }
-
-    fun exitFullscreen() {
-        infoTimer?.cancel()
-        mutableState.value = state.value.copy(fullscreen = false, infoVisible = false)
     }
 
     fun showInformation() {

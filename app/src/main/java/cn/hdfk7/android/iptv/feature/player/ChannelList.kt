@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
@@ -74,7 +75,7 @@ class ChannelListFocus(val memory: ChannelFocusMemory) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null) {
+fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null, cinema: Boolean = false) {
     val favorites = state.activeSourceId == SourceLibrary.FAVORITES_ID
     val selectedIndex = remember(state.channels, state.selectedId, calculation = {
         state.channels.indexOfFirst(predicate = { channel -> channel.id == state.selectedId })
@@ -132,13 +133,23 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
             listState.scrollToItem(0)
         }
     })
+    val shape = RoundedCornerShape(if (cinema) 12.dp else 18.dp)
+    val panel = if (cinema) {
+        Modifier.background(Brush.horizontalGradient(listOf(BackdropBottom.copy(alpha = 0.80f), BackdropBottom.copy(alpha = 0.64f))))
+    } else {
+        Modifier.background(Panel).border(1.dp, Border, shape)
+    }
     Column(
-        modifier = modifier.clip(RoundedCornerShape(18.dp)).background(Panel).border(1.dp, Border, RoundedCornerShape(18.dp)).padding(if (compact) 8.dp else 12.dp),
+        modifier = modifier.clip(shape).then(panel).padding(if (compact) 8.dp else 12.dp),
         verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp),
         content = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
-                    Text(text = if (compact) stringResource(R.string.channel_count, state.channels.size) else state.channels.size.toString(), color = Muted, fontSize = if (compact) 12.sp else 14.sp)
+                    Text(text = if (cinema) stringResource(R.string.tv_channels) else if (compact) stringResource(R.string.channel_count, state.channels.size) else state.channels.size.toString(), color = if (cinema) Accent else Muted, fontSize = if (compact) 12.sp else 14.sp)
+                    if (cinema) {
+                        val source = state.sources.firstOrNull(predicate = { entry -> entry.id == state.activeSourceId })
+                        Text(text = source?.name ?: stringResource(R.string.favorites), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 })
                 if (state.refreshing) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Accent)
@@ -203,11 +214,11 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
                             })
                         }
                         true
-                    }), verticalArrangement = Arrangement.spacedBy(6.dp), content = {
+                    }), verticalArrangement = Arrangement.spacedBy(if (cinema) 2.dp else 6.dp), content = {
                         itemsIndexed(items = state.channels, key = { _, channel -> channel.id }, itemContent = { index, channel ->
-                            ChannelRow(channel = channel, index = index, television = television, selected = { focusedIndex < 0 && !listHasFocus && channel.id == state.selectedId }, highlighted = { focusedIndex == index }, showSource = favorites, requestFocus = requestInitialFocus && index == 0, selectedRowFocus = selectedRowFocus, onInitialFocus = onInitialFocus, onVideoFocus = { commitChannel(channel); if (onRight != null) { onRight() } else { videoFocus.requestFocus() } }, onLeftToHeader = onLeftToHeader, onFocused = {
+                            ChannelRow(channel = channel, index = index, television = television, cinema = cinema, selected = { channel.id == state.selectedId && (cinema || (focusedIndex < 0 && !listHasFocus)) }, highlighted = { focusedIndex == index }, showSource = favorites, requestFocus = requestInitialFocus && index == 0, selectedRowFocus = selectedRowFocus, onInitialFocus = onInitialFocus, onVideoFocus = { if (!cinema) { commitChannel(channel) }; if (onRight != null) { onRight() } else { videoFocus.requestFocus() } }, onLeftToHeader = onLeftToHeader, onFocused = {
                                 focusedIndex = index
-                                if (enteringList) {
+                                if (cinema || enteringList) {
                                     enteringList = false
                                 } else {
                                     focusSelection?.cancel()
@@ -219,7 +230,7 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
                                     })
                                 }
                             }, onSelect = {
-                                val moveToVideo = television && channel.id == state.selectedId
+                                val moveToVideo = television && !cinema && channel.id == state.selectedId
                                 if (channel.id == state.selectedId && state.playback in setOf(PlaybackStatus.IDLE, PlaybackStatus.ERROR)) {
                                     onSelect(channel)
                                 } else {
@@ -263,7 +274,7 @@ private suspend fun LazyListState.revealItem(index: Int) {
 }
 
 @Composable
-private fun ChannelRow(channel: Channel, index: Int, television: Boolean, selected: () -> Boolean, highlighted: () -> Boolean, showSource: Boolean, requestFocus: Boolean, selectedRowFocus: ChannelListFocus, onInitialFocus: () -> Unit, onVideoFocus: () -> Unit, onLeftToHeader: (() -> Unit)?, onFocused: () -> Unit, onSelect: () -> Unit) {
+private fun ChannelRow(channel: Channel, index: Int, television: Boolean, cinema: Boolean, selected: () -> Boolean, highlighted: () -> Boolean, showSource: Boolean, requestFocus: Boolean, selectedRowFocus: ChannelListFocus, onInitialFocus: () -> Unit, onVideoFocus: () -> Unit, onLeftToHeader: (() -> Unit)?, onFocused: () -> Unit, onSelect: () -> Unit) {
     val categoryLabel = remember(channel, calculation = {
         when (ChannelCategory.classify(channel)) {
             ChannelCategory.CCTV -> R.string.channel_category_cctv
@@ -299,21 +310,21 @@ private fun ChannelRow(channel: Channel, index: Int, television: Boolean, select
         }
     })
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), content = {
-        TvAction(modifier = Modifier.fillMaxWidth().height(58.dp).drawBehind(onDraw = {
+        TvAction(modifier = Modifier.fillMaxWidth().height(if (cinema) 40.dp else 58.dp).drawBehind(onDraw = {
             // Lazy rows can recompose separately as they enter the viewport. Resolve the fill when drawing.
             val focused = highlighted()
             val fill = when {
-                focused -> FocusFill
+                focused -> if (cinema) FocusFill.copy(alpha = 0.84f) else FocusFill
                 selected() -> SelectedPanel
-                else -> Panel
+                else -> if (cinema) Color.Transparent else Panel
             }
-            val radius = 16.dp.toPx()
+            val radius = (if (cinema) 8.dp else 16.dp).toPx()
             drawRoundRect(color = fill, cornerRadius = CornerRadius(radius))
             if (focused) {
                 val strokeWidth = 1.dp.toPx()
                 val inset = strokeWidth / 2
                 drawRoundRect(
-                    color = FocusBorder,
+                    color = if (cinema) Accent else FocusBorder,
                     topLeft = Offset(inset, inset),
                     size = Size(size.width - strokeWidth, size.height - strokeWidth),
                     cornerRadius = CornerRadius(radius - inset),
@@ -339,14 +350,19 @@ private fun ChannelRow(channel: Channel, index: Int, television: Boolean, select
                 selectedRowFocus.memory.remember(channel.sourceId, channel.id)
                 onFocused()
             }
-        }), onClick = onSelect, containerColor = Color.Transparent, focusHighlight = false, content = {
+        }), onClick = onSelect, containerColor = Color.Transparent, focusHighlight = false, showUnfocusedBorder = !cinema, content = {
             val focused = highlighted()
             val playing = selected()
             Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, modifier = Modifier.width(if (television) 34.dp else 28.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
                 Text(text = channel.name, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(text = if (showSource) channel.sourceName else stringResource(categoryLabel), color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, fontSize = if (television) 12.sp else 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (!cinema) {
+                    Text(text = if (showSource) channel.sourceName else stringResource(categoryLabel), color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, fontSize = if (television) 12.sp else 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             })
+            if (cinema && playing) {
+                Box(modifier = Modifier.size(6.dp).background(FocusBorder, androidx.compose.foundation.shape.CircleShape))
+            }
         })
     })
 }

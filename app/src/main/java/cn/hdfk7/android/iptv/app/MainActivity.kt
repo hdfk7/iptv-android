@@ -5,8 +5,6 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -14,6 +12,7 @@ import android.view.WindowManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
@@ -32,7 +31,6 @@ import cn.hdfk7.android.iptv.feature.player.PlayerViewModel
 class MainActivity : ComponentActivity() {
     private val viewModel: PlayerViewModel by viewModels()
     private val sourceViewModel: SourceManagerViewModel by viewModels()
-    private var fullscreenBackPressed = false
     private var television = false
     private var lastBackPressTime = 0L
     private var playerDialogOpen = false
@@ -62,13 +60,8 @@ class MainActivity : ComponentActivity() {
             insets.isAppearanceLightNavigationBars = false
         }
         setContent(content = {
-            val state by viewModel.state.collectAsStateWithLifecycle()
-            LaunchedEffect(key1 = state.fullscreen, block = {
-                if (television || state.fullscreen) {
-                    insets.hide(WindowInsetsCompat.Type.systemBars())
-                } else {
-                    insets.show(WindowInsetsCompat.Type.systemBars())
-                }
+            LaunchedEffect(key1 = Unit, block = {
+                insets.hide(WindowInsetsCompat.Type.systemBars())
             })
             IptvTheme(content = {
                 LaunchedEffect(key1 = exitHintTime, block = {
@@ -106,28 +99,19 @@ class MainActivity : ComponentActivity() {
             }
             if (television) {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                    if (!viewModel.state.value.infoVisible) {
+                    if (viewModel.state.value.infoVisible) {
                         lastBackPressTime = 0L
                         exitHintTime = 0L
-                        viewModel.showInformation()
+                        onBackPressedDispatcher.onBackPressed()
                         return true
                     }
                     val now = SystemClock.elapsedRealtime()
-                    if (now - lastBackPressTime < DOUBLE_BACK_INTERVAL_MS) {
+                    if (lastBackPressTime != 0L && now - lastBackPressTime < DOUBLE_BACK_INTERVAL_MS) {
                         finish()
                     } else {
                         lastBackPressTime = now
                         exitHintTime = now
                     }
-                }
-                return true
-            }
-            if (viewModel.state.value.fullscreen || fullscreenBackPressed) {
-                if (event.action == KeyEvent.ACTION_DOWN) {
-                    fullscreenBackPressed = true
-                    viewModel.exitFullscreen()
-                } else if (event.action == KeyEvent.ACTION_UP) {
-                    fullscreenBackPressed = false
                 }
                 return true
             }

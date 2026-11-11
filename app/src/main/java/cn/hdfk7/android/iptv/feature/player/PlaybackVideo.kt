@@ -6,7 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
 
-/** A single video surface remains attached when entering/leaving fullscreen. */
+/** Keep the video surface attached while opening and closing controls. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 internal fun PlaybackVideo(viewModel: PlayerViewModel) {
