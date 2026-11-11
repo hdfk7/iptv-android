@@ -46,3 +46,21 @@ python qa/interaction_audit.py flows
 更新安装需要服务端提供版本号更高且签名相同的 APK。电视模拟器和小米实体电视应分别记录测试结果。
 
 本次使用 Android 11 电视模拟器和 Android 13 OPPO 手机。两端均验证了直播、切台、收藏、设置、版本说明及测试线路排序和故障恢复。54 项单元测试通过，Debug 和 Release Lint 均为 0 错误。本次设备验证覆盖了从旧版签名包覆盖安装到 1.3.0，应用内下载新版和小米实体电视另行验证。
+
+
+## Debug 播放和节目表回归
+
+先执行 `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug`。使用下面的命令生成测试信号，在电视模拟器和手机上分别指定 ADB 序列号运行。
+
+```powershell
+ffmpeg -f lavfi -i testsrc2=size=320x180:rate=25 -t 60 -c:v libx264 -pix_fmt yuv420p -movflags +faststart smoke.mp4
+ffmpeg -i smoke.mp4 -t 5 -c copy -f mpegts smoke.ts
+python qa/debug_smoke.py --serial <ADB序列号> --media smoke.mp4
+```
+
+脚本按打包清单安装 Debug 包并核对版本。只在没有 IPTV Debug 包的设备上创建临时测试数据，运行结束清理临时安装与 ADB 转发。覆盖 404 自动切线、节目表重定向与当前/下一节目、订阅失败后的缓存续播、重启后优先使用稳定线路、冷启动恢复频道，以及首帧之后 HLS 分片停滞的恢复。日志中记录首帧、切台总耗时和检测到故障后的恢复耗时。
+
+
+## Release 换台耗时
+
+先覆盖安装当前正式签名包。构建属性 `APP_DEBUG_SWITCH=true` 提供仅包含耗时、线路是否首试和换台编号的日志。运行 `python qa/release_tune.py --serial <ADB序列号> --rounds 40`，脚本会核对已安装包的 SHA-256，冷启动后在当前源相邻两个频道之间往返。预热四次，按成功出画面的样本计算 P50（中位数）和 P95（最近秩），失败和超时另行计数。结果及原始数据保存在 `app/build/outputs/qa/release-tune-*.json`。真实源及网络状态会影响结果。

@@ -3,7 +3,10 @@ package cn.hdfk7.android.iptv.feature.player
 import cn.hdfk7.android.iptv.core.model.LineQuality
 import cn.hdfk7.android.iptv.core.model.PlaybackLine
 
-internal class PlaybackLineRanking {
+internal class PlaybackLineRanking(
+    private val readHistory: ((String, String) -> LineQuality?)? = null,
+    private val writeHistory: ((String, String, LineQuality) -> Unit)? = null
+) {
     private val qualities = mutableMapOf<String, MutableMap<String, LineQuality>>()
 
     fun reset(): Unit {
@@ -11,7 +14,11 @@ internal class PlaybackLineRanking {
     }
 
     fun record(program: String, url: String, quality: LineQuality): Unit {
-        qualities.getOrPut(key = program, defaultValue = { mutableMapOf() })[url] = quality
+        if (writeHistory != null) {
+            writeHistory.invoke(program, url, quality)
+        } else {
+            qualities.getOrPut(key = program, defaultValue = { mutableMapOf() })[url] = quality
+        }
     }
 
     fun order(program: String, urls: List<String>, playingUrl: String?): RankedPlaybackLines {
@@ -19,13 +26,13 @@ internal class PlaybackLineRanking {
     }
 
     fun failed(program: String, url: String): Unit {
-        val previous = qualities[program]?.get(url) ?: LineQuality()
+        val previous = (readHistory?.invoke(program, url) ?: qualities[program]?.get(url)) ?: LineQuality()
         record(program, url, previous.copy(failures = previous.failures + 1))
     }
 
     fun lines(program: String, urls: List<String>): List<PlaybackLine> {
         val known = qualities[program].orEmpty()
-        return urls.distinct().mapIndexed(transform = { index, url -> PlaybackLine(url, index, known[url]) })
+        return urls.distinct().mapIndexed(transform = { index, url -> PlaybackLine(url, index, readHistory?.invoke(program, url) ?: known[url]) })
             .sortedWith(compareBy<PlaybackLine>({ line -> tier(line.quality) })
                 .thenBy({ line -> (stallRatio(line.quality) / 0.05).toInt() })
                 .thenBy({ line -> (dropRatio(line.quality) / 0.05).toInt() })

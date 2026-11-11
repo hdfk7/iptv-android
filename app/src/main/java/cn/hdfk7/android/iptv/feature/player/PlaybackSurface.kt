@@ -23,17 +23,24 @@ import cn.hdfk7.android.iptv.core.ui.theme.BackdropBottom
 import cn.hdfk7.android.iptv.core.ui.theme.PanelAlt
 
 @Composable
-internal fun PlaybackSurface(state: PlayerState, modifier: Modifier): Unit {
+internal fun PlaybackSurface(state: PlayerState, showPlaybackStatus: Boolean, modifier: Modifier): Unit {
     Box(modifier = modifier, contentAlignment = Alignment.Center, content = {
         when (state.playback) {
             PlaybackStatus.PLAYING -> Unit
-            PlaybackStatus.PAUSED -> Text(text = stringResource(R.string.paused), color = Color.White,
-                modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(10.dp)).padding(14.dp))
+            PlaybackStatus.PAUSED -> {
+                if (showPlaybackStatus) {
+                    Text(text = stringResource(R.string.paused), color = Color.White,
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(10.dp)).padding(14.dp))
+                }
+            }
             else -> Column(
                 modifier = Modifier.fillMaxSize().background(Brush.radialGradient(listOf(PanelAlt, BackdropBottom))),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
                 content = {
+                    if (!showPlaybackStatus) {
+                        return@Column
+                    }
                     if (state.playback == PlaybackStatus.LOADING) {
                         CircularProgressIndicator(modifier = Modifier.size(40.dp), color = Accent, strokeWidth = 3.dp)
                         Spacer(modifier = Modifier.height(16.dp))

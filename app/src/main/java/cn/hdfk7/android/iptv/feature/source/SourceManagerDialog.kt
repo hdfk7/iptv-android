@@ -1,5 +1,6 @@
 package cn.hdfk7.android.iptv.feature.source
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,17 +15,24 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,22 +50,37 @@ import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 fun SourceManagerDialog(viewModel: SourceManagerViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val catalog by viewModel.catalog.collectAsStateWithLifecycle()
+    val television = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     Box(content = {
         if (state.open) {
-            Dialog(onDismissRequest = viewModel::back, properties = DialogProperties(usePlatformDefaultWidth = false), content = {
-                Column(modifier = Modifier.width(710.dp).heightIn(max = 460.dp).background(DialogSurface, RoundedCornerShape(22.dp)).border(1.dp, Border, RoundedCornerShape(22.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp), content = {
-                    when {
-                        state.draft != null -> {
-                            SourceEditor(state = state, viewModel = viewModel)
-                        }
-                        state.deleting != null -> {
-                            SourceDelete(state = state, viewModel = viewModel)
-                        }
-                        else -> {
-                            SourceList(state = state, library = catalog.library, viewModel = viewModel)
-                        }
+            Dialog(onDismissRequest = viewModel::back, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false), content = {
+                // TV keyboards can float over the lower part of the screen without reporting an inset.
+                val dockEditorAboveKeyboard = television && state.draft != null
+                BoxWithConstraints(
+                    modifier = (if (state.draft != null) Modifier.fillMaxSize() else Modifier)
+                        .windowInsetsPadding(WindowInsets.safeDrawing).imePadding(),
+                    contentAlignment = if (dockEditorAboveKeyboard) Alignment.TopCenter else Alignment.Center,
+                    content = {
+                        val compactEditor = state.draft != null && maxHeight < 200.dp
+                        val outerPadding = if (compactEditor) 6.dp else 12.dp
+                        val innerPadding = if (compactEditor) 10.dp else 24.dp
+                        Column(modifier = Modifier.padding(outerPadding).width(710.dp).heightIn(max = 460.dp)
+                            .background(DialogSurface, RoundedCornerShape(22.dp)).border(1.dp, Border, RoundedCornerShape(22.dp))
+                            .padding(innerPadding), verticalArrangement = Arrangement.spacedBy(16.dp), content = {
+                            when {
+                                state.draft != null -> {
+                                    SourceEditor(state = state, viewModel = viewModel)
+                                }
+                                state.deleting != null -> {
+                                    SourceDelete(state = state, viewModel = viewModel)
+                                }
+                                else -> {
+                                    SourceList(state = state, library = catalog.library, viewModel = viewModel)
+                                }
+                            }
+                        })
                     }
-                })
+                )
             })
         }
     })
@@ -130,19 +153,30 @@ private fun SourceCard(name: String, detail: String, active: Boolean, busy: Bool
 private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerViewModel) {
     val inputMode = LocalInputModeManager.current
     val draft = state.draft ?: return
-    val nameFocus = remember(calculation = { FocusRequester() })
+    val closeFocus = remember(calculation = { FocusRequester() })
+    val view = LocalView.current
+    var fieldsReady by remember(draft.id, calculation = { mutableStateOf(false) })
+    val fieldFocus = Modifier.focusProperties(scope = { canFocus = fieldsReady })
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(draft.id, windowFocused, block = {
         if (windowFocused) {
             inputMode.requestInputMode(InputMode.Keyboard)
             withFrameNanos(onFrame = { _ -> })
-            nameFocus.requestFocus()
+            if (!fieldsReady) {
+                closeFocus.requestFocus()
+                val window = (view.parent as? DialogWindowProvider)?.window
+                if (window != null) {
+                    WindowCompat.getInsetsController(window, view).hide(WindowInsetsCompat.Type.ime())
+                }
+                fieldsReady = true
+            }
         }
     })
     Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp), content = {
-        DialogHeader(title = stringResource(if (draft.id == null) R.string.source_add else R.string.source_edit), onClose = viewModel::back)
-        OutlinedTextField(value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, enabled = !state.busy, modifier = Modifier.fillMaxWidth().focusRequester(nameFocus))
-        OutlinedTextField(value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false), enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+        DialogHeader(title = stringResource(if (draft.id == null) R.string.source_add else R.string.source_edit),
+            onClose = viewModel::back, closeFocus = closeFocus)
+        OutlinedTextField(value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, showKeyboardOnFocus = false), enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(fieldFocus))
+        OutlinedTextField(value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = ImeAction.Done, showKeyboardOnFocus = false), enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(fieldFocus))
         SourceError(error = state.error)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), content = {
             TvIconButton(description = stringResource(if (state.busy) R.string.saving else R.string.save), icon = R.drawable.ic_check, onClick = viewModel::save, selected = true, enabled = !state.busy)
@@ -175,12 +209,12 @@ private fun SourceDelete(state: SourceManagerState, viewModel: SourceManagerView
 }
 
 @Composable
-private fun DialogHeader(title: String, onClose: () -> Unit) {
+private fun DialogHeader(title: String, onClose: () -> Unit, closeFocus: FocusRequester? = null) {
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp), content = {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp), content = {
             Text(text = title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 25.sp)
         })
-        TvIconButton(icon = R.drawable.ic_close, description = stringResource(R.string.close), onClick = onClose)
+        TvIconButton(icon = R.drawable.ic_close, description = stringResource(R.string.close), onClick = onClose, modifier = if (closeFocus != null) Modifier.focusRequester(closeFocus) else Modifier)
     })
 }
 

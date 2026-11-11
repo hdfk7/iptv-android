@@ -4,11 +4,14 @@ import cn.hdfk7.android.iptv.core.model.Channel
 import cn.hdfk7.android.iptv.core.model.PlaylistSource
 import cn.hdfk7.android.iptv.core.model.SourceLibrary
 import cn.hdfk7.android.iptv.core.model.PlaybackLine
+import cn.hdfk7.android.iptv.core.model.ProgrammePreview
 
 enum class PlaybackStatus { IDLE, LOADING, PLAYING, PAUSED, ERROR }
 
 data class PlayerState(
     val channels: List<Channel> = emptyList(),
+    val recentChannelIds: List<String> = emptyList(),
+    val programmePreviews: Map<String, ProgrammePreview> = emptyMap(),
     val sources: List<PlaylistSource> = emptyList(),
     val activeSourceId: String = SourceLibrary.FAVORITES_ID,
     val favoriteIds: Set<String> = emptySet(),

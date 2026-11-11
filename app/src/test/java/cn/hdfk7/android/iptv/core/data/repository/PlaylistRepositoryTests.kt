@@ -169,6 +169,23 @@ class PlaylistRepositoryTests {
         })
     }
 
+    @Test
+    fun restoresSavedSourceOnlyWhenEnabledAndAvailable(): Unit = runBlocking(block = {
+        val initial = LibraryRules.defaults()
+        val second = initial.sources[1]
+        val saved = MemoryLibrary(initial.copy(activeSourceId = second.id))
+        val restored = PlaylistRepository(saved, { _ -> MemoryPlaylist() }, { _ -> error("Unexpected download") },
+            { 1000L }, restoreActiveSource = { true })
+        restored.initialize()
+        assertEquals(second.id, restored.state.value.library.activeSourceId)
+
+        saved.value = initial.copy(activeSourceId = "deleted")
+        val fallback = PlaylistRepository(saved, { _ -> MemoryPlaylist() }, { _ -> error("Unexpected download") },
+            { 1000L }, restoreActiveSource = { true })
+        fallback.initialize()
+        assertEquals(initial.sources.first().id, fallback.state.value.library.activeSourceId)
+    })
+
     private fun repository(storage: MemoryLibrary, stores: MutableMap<String, MemoryPlaylist>, download: suspend (String) -> String): PlaylistRepository {
         return PlaylistRepository(storage, { source ->
             synchronized(stores, block = { stores.getOrPut(key = source.url, defaultValue = { MemoryPlaylist() }) })

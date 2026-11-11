@@ -6,8 +6,14 @@ import cn.hdfk7.android.iptv.core.data.network.PlaylistDownloader
 import cn.hdfk7.android.iptv.core.data.repository.PlaylistRepository
 
 class IptvApplication : Application() {
+    internal val viewingPreferences by lazy(initializer = { getSharedPreferences("viewing", MODE_PRIVATE) })
     val proxySettings by lazy(initializer = { ProxySettingsStore(this) })
+    internal val downloader by lazy(initializer = { PlaylistDownloader(settings = { checkNotNull(proxySettings.current) }) })
     val playlistRepository: PlaylistRepository by lazy(initializer = {
-        PlaylistRepository(filesDir, PlaylistDownloader(settings = { checkNotNull(proxySettings.current) }))
+        PlaylistRepository(
+            filesDir,
+            downloader,
+            restoreActiveSource = { viewingPreferences.getBoolean("resume", false) }
+        )
     })
 }

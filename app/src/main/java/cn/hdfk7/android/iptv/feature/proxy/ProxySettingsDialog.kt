@@ -37,7 +37,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         error = null
     }
     val focus = remember(calculation = { FocusRequester() })
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false), content = {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false), content = {
         val inputMode = LocalInputModeManager.current
         val windowFocused = LocalWindowInfo.current.isWindowFocused
         LaunchedEffect(windowFocused, block = {
@@ -47,53 +47,64 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                 focus.requestFocus()
             }
         })
-        Column(modifier = Modifier.width(560.dp).heightIn(max = 480.dp).background(DialogSurface, RoundedCornerShape(22.dp)).padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp), content = {
-            Text(text = stringResource(R.string.proxy_title), color = Color.White)
-            TvIconButton(
-                description = stringResource(if (draft.enabled) R.string.proxy_on else R.string.proxy_off),
-                icon = R.drawable.ic_power,
-                selected = draft.enabled,
-                onClick = {
-                    val updated = draft.copy(enabled = !draft.enabled)
-                    if (updated.valid()) {
-                        updateDraft(updated)
-                    } else {
-                        error = R.string.proxy_invalid
+        Column(
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).imePadding().padding(12.dp)
+                .width(560.dp).heightIn(max = 480.dp).background(DialogSurface, RoundedCornerShape(22.dp)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            content = {
+                Text(text = stringResource(R.string.proxy_title), color = Color.White)
+                Column(
+                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = {
+                        TvIconButton(
+                            description = stringResource(if (draft.enabled) R.string.proxy_on else R.string.proxy_off),
+                            icon = R.drawable.ic_power,
+                            selected = draft.enabled,
+                            onClick = {
+                                val updated = draft.copy(enabled = !draft.enabled)
+                                if (updated.valid()) {
+                                    updateDraft(updated)
+                                } else {
+                                    error = R.string.proxy_invalid
+                                }
+                            },
+                            modifier = Modifier.focusRequester(focus)
+                        )
+                        OutlinedTextField(value = draft.host, onValueChange = { updateDraft(draft.copy(host = it.trim())) }, label = { Text(stringResource(R.string.proxy_ip)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = draft.port, onValueChange = { updateDraft(draft.copy(port = it)) }, label = { Text(stringResource(R.string.proxy_port)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
+                            OutlinedTextField(value = draft.username, onValueChange = { updateDraft(draft.copy(username = it)) }, label = { Text(stringResource(R.string.proxy_username)) }, singleLine = true, modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = draft.password, onValueChange = { updateDraft(draft.copy(password = it)) }, label = { Text(stringResource(R.string.proxy_password)) }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true, modifier = Modifier.weight(1f))
+                        })
+                        if (error != null) {
+                            Text(text = stringResource(error!!), color = Error)
+                        }
                     }
-                },
-                modifier = Modifier.focusRequester(focus)
-            )
-            OutlinedTextField(value = draft.host, onValueChange = { updateDraft(draft.copy(host = it.trim())) }, label = { Text(stringResource(R.string.proxy_ip)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = draft.port, onValueChange = { updateDraft(draft.copy(port = it)) }, label = { Text(stringResource(R.string.proxy_port)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
-                OutlinedTextField(value = draft.username, onValueChange = { updateDraft(draft.copy(username = it)) }, label = { Text(stringResource(R.string.proxy_username)) }, singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(value = draft.password, onValueChange = { updateDraft(draft.copy(password = it)) }, label = { Text(stringResource(R.string.proxy_password)) }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true, modifier = Modifier.weight(1f))
-            })
-            if (error != null) {
-                Text(text = stringResource(error!!), color = Error)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
-                TvIconButton(description = stringResource(R.string.proxy_save), icon = R.drawable.ic_check, onClick = {
-                    if (!draft.valid()) {
-                        error = R.string.proxy_invalid
-                        return@TvIconButton
-                    }
-                    val previous = store.current
-                    if (draft != previous) {
-                        try {
-                            store.save(draft)
-                        } catch (exception: Exception) {
-                            error = R.string.storage_error
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
+                    TvIconButton(description = stringResource(R.string.proxy_save), icon = R.drawable.ic_check, onClick = {
+                        if (!draft.valid()) {
+                            error = R.string.proxy_invalid
                             return@TvIconButton
                         }
-                        if (previous == null || previous.enabled || draft.enabled) {
-                            onSaved()
+                        val previous = store.current
+                        if (draft != previous) {
+                            try {
+                                store.save(draft)
+                            } catch (exception: Exception) {
+                                error = R.string.storage_error
+                                return@TvIconButton
+                            }
+                            if (previous == null || previous.enabled || draft.enabled) {
+                                onSaved()
+                            }
                         }
-                    }
-                    onClose()
+                        onClose()
+                    })
+                    TvIconButton(description = stringResource(R.string.proxy_cancel), icon = R.drawable.ic_close, onClick = onClose)
                 })
-                TvIconButton(description = stringResource(R.string.proxy_cancel), icon = R.drawable.ic_close, onClick = onClose)
-            })
-        })
+            }
+        )
     })
 }

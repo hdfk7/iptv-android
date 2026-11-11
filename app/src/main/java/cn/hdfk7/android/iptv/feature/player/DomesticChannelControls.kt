@@ -31,7 +31,7 @@ internal fun domesticDisplayName(channel: Channel): String {
 }
 
 @Composable
-internal fun DomesticChannelControls(
+internal fun ChannelGroupControls(
     groups: List<DomesticChannelGroup>,
     selected: DomesticChannelGroup,
     television: Boolean,
@@ -44,6 +44,7 @@ internal fun DomesticChannelControls(
                 DomesticChannelGroup.CCTV -> R.string.domestic_group_cctv
                 DomesticChannelGroup.SATELLITE -> R.string.domestic_group_satellite
                 DomesticChannelGroup.OTHER -> R.string.domestic_group_other
+                DomesticChannelGroup.RECENT -> R.string.recent_channels
             }
             TvAction(
                 onClick = { onSelect(group) },

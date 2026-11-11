@@ -11,6 +11,7 @@ import java.util.UUID
 object LibraryRules {
     private const val DOMESTIC_SOURCE_ID = "best-fan"
     const val DEFAULT_URL = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
+    internal const val DOMESTIC_GUIDE_URL = "http://epg.51zmt.top:8000/e.xml"
     const val MYIPTV_URL = "https://raw.githubusercontent.com/suxuang/myIPTV/main/ipv4.m3u"
     const val IPTV_ORG_URL = "https://iptv-org.github.io/iptv/index.m3u"
 

@@ -32,9 +32,14 @@ class PlaylistRepository(
     private val libraryStore: LibraryStore,
     private val playlistStores: (PlaylistSource) -> PlaylistStore,
     private val download: suspend (String) -> String,
-    private val clock: () -> Long
+    private val clock: () -> Long,
+    private val restoreActiveSource: () -> Boolean = { false }
 ) {
-    constructor(directory: File, downloader: PlaylistDownloader = PlaylistDownloader()) : this(
+    constructor(
+        directory: File,
+        downloader: PlaylistDownloader = PlaylistDownloader(),
+        restoreActiveSource: () -> Boolean = { false }
+    ) : this(
         FileLibraryStore(directory),
         { source ->
             val digest = MessageDigest.getInstance("SHA-256").digest(source.url.toByteArray())
@@ -42,7 +47,8 @@ class PlaylistRepository(
             FilePlaylistStore(directory, "playlist-$hash.json")
         },
         downloader::download,
-        System::currentTimeMillis
+        System::currentTimeMillis,
+        restoreActiveSource
     )
 
     private val mutex = Mutex()
@@ -149,8 +155,12 @@ class PlaylistRepository(
                 return@withLock false
             }
             try {
-                val result = RefreshEngine(playlistStores(source), download, clock)
-                    .refresh(source.url, readResponseTime = LibraryRules.isDomestic(source))
+                val domestic = LibraryRules.isDomestic(source)
+                val result = RefreshEngine(playlistStores(source), download, clock).refresh(
+                    source.url,
+                    readResponseTime = domestic,
+                    fallbackGuideAddress = if (domestic) LibraryRules.DOMESTIC_GUIDE_URL else null
+                )
                 mutex.withLock(action = {
                     val currentSource = library.sources.firstOrNull(predicate = { current -> current.id == source.id && current.url == source.url })
                     if (currentSource != null) {
@@ -193,7 +203,13 @@ class PlaylistRepository(
         try {
             val stored = libraryStore.read()
             val saved = stored ?: LibraryRules.defaults()
-            library = saved.copy(activeSourceId = saved.sources.firstOrNull()?.id ?: SourceLibrary.FAVORITES_ID)
+            val savedSourceExists = saved.activeSourceId == SourceLibrary.FAVORITES_ID ||
+                saved.sources.any(predicate = { source -> source.id == saved.activeSourceId })
+            library = if (restoreActiveSource() && savedSourceExists) {
+                saved
+            } else {
+                saved.copy(activeSourceId = saved.sources.firstOrNull()?.id ?: SourceLibrary.FAVORITES_ID)
+            }
             if (stored == null || library != stored) {
                 libraryStore.write(library)
             }

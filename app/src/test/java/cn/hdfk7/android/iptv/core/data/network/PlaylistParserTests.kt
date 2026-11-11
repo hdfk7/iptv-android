@@ -6,6 +6,19 @@ import org.junit.jupiter.api.Test
 
 class PlaylistParserTests {
     @Test
+    fun usesConfiguredGuideOnlyWhenPlaylistDoesNotDeclareOne(): Unit {
+        val channels = "\n#EXTINF:-1 tvg-id=\"CCTV1\",CCTV1\nhttps://example.org/live"
+        val source = "https://example.org/list.m3u"
+        val fallback = "https://example.org/fallback.xml"
+        val parser = PlaylistParser()
+        assertEquals(fallback, parser.parse("#EXTM3U" + channels, source, fallbackGuideAddress = fallback)
+            .single().guideRefs.single().address)
+        assertEquals("https://example.org/explicit.xml",
+            parser.parse("#EXTM3U x-tvg-url=\"/explicit.xml\"" + channels, source, fallbackGuideAddress = fallback)
+                .single().guideRefs.single().address)
+    }
+
+    @Test
     fun usesValidResponseTimesOnlyWhenRequested(): Unit {
         val playlist = """
             #EXTM3U
@@ -86,6 +99,26 @@ class PlaylistParserTests {
         val channels = parser.parse(text, base)
         assertEquals(1, channels.size)
         assertEquals(2, channels.single().streams.size)
+    }
+
+    @Test
+    fun attachesGuideIdsOnlyToPlayableEntriesAndResolvesRelativeFeeds(): Unit {
+        val catalog = """
+            #EXTM3U x-tvg-url="/guide.xml,ftp://example.org/ignored"
+            #EXTINF:-1 tvg-id="CCTV1",CCTV1
+            https://example.org/first
+            #EXTINF:-1 tvg-id="CCTV1-alt",CCTV-1
+            https://example.org/second
+            #EXTINF:-1 tvg-id="invalid",CCTV1
+            udp://example.org/third
+            #EXTINF:-1,No guide
+            https://example.org/fourth
+        """.trimIndent()
+        val channels = PlaylistParser().parse(catalog, "https://example.org/lists/test.m3u")
+        assertEquals(listOf("CCTV1", "CCTV1-alt"), channels[0].guideRefs.map(transform = { ref -> ref.channelId }))
+        assertEquals(listOf("https://example.org/guide.xml"), channels[0].guideRefs.map(transform = { ref -> ref.address }).distinct())
+        assertEquals("", channels[1].guideRefs.single().channelId)
+        assertEquals("No guide", channels[1].guideRefs.single().channelName)
     }
 
     @Test

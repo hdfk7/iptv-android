@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.core.model.Channel
+import cn.hdfk7.android.iptv.core.model.ProgrammePreview
 import cn.hdfk7.android.iptv.core.model.ChannelCategory
 import cn.hdfk7.android.iptv.core.model.ChannelFocusMemory
 import cn.hdfk7.android.iptv.core.model.SourceLibrary
@@ -225,7 +226,7 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
                     }), verticalArrangement = Arrangement.spacedBy(if (cinema) 2.dp else 6.dp), content = {
                         itemsIndexed(items = state.channels, key = { _, channel -> channel.id }, itemContent = { index, channel ->
                             val displayName = if (domestic) domesticDisplayName(channel) else channel.name
-                            ChannelRow(channel = channel, displayName = displayName, index = index, television = television, cinema = cinema, selected = { channel.id == state.selectedId && (cinema || (focusedChannelId == null && !listHasFocus)) }, highlighted = { focusedChannelId == channel.id }, showSource = favorites, requestFocus = requestInitialFocus && index == 0, selectedRowFocus = selectedRowFocus, onInitialFocus = onInitialFocus, onVideoFocus = { if (!cinema) { commitChannel(channel) }; if (onRight != null) { onRight() } else { videoFocus.requestFocus() } }, onLeftToHeader = onLeftToHeader, onFocused = {
+                            ChannelRow(channel = channel, displayName = displayName, preview = state.programmePreviews[channel.id], index = index, television = television, cinema = cinema, selected = { channel.id == state.selectedId && (cinema || (focusedChannelId == null && !listHasFocus)) }, highlighted = { focusedChannelId == channel.id }, showSource = favorites, requestFocus = requestInitialFocus && index == 0, selectedRowFocus = selectedRowFocus, onInitialFocus = onInitialFocus, onVideoFocus = { if (!cinema) { commitChannel(channel) }; if (onRight != null) { onRight() } else { videoFocus.requestFocus() } }, onLeftToHeader = onLeftToHeader, onFocused = {
                                 focusedChannelId = channel.id
                                 if (cinema || enteringList) {
                                     enteringList = false
@@ -283,7 +284,7 @@ private suspend fun LazyListState.revealItem(index: Int) {
 }
 
 @Composable
-private fun ChannelRow(channel: Channel, displayName: String, index: Int, television: Boolean, cinema: Boolean, selected: () -> Boolean, highlighted: () -> Boolean, showSource: Boolean, requestFocus: Boolean, selectedRowFocus: ChannelListFocus, onInitialFocus: () -> Unit, onVideoFocus: () -> Unit, onLeftToHeader: (() -> Unit)?, onFocused: () -> Unit, onSelect: () -> Unit) {
+private fun ChannelRow(channel: Channel, displayName: String, preview: ProgrammePreview?, index: Int, television: Boolean, cinema: Boolean, selected: () -> Boolean, highlighted: () -> Boolean, showSource: Boolean, requestFocus: Boolean, selectedRowFocus: ChannelListFocus, onInitialFocus: () -> Unit, onVideoFocus: () -> Unit, onLeftToHeader: (() -> Unit)?, onFocused: () -> Unit, onSelect: () -> Unit) {
     val categoryLabel = remember(channel, calculation = {
         when (ChannelCategory.classify(channel)) {
             ChannelCategory.CCTV -> R.string.channel_category_cctv
@@ -319,7 +320,13 @@ private fun ChannelRow(channel: Channel, displayName: String, index: Int, televi
         }
     })
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), content = {
-        TvAction(modifier = Modifier.fillMaxWidth().height(if (cinema) 40.dp else 58.dp).drawBehind(onDraw = {
+        val hasPreview = cinema && preview != null
+        val rowHeight = if (hasPreview) {
+            Modifier.heightIn(min = 72.dp)
+        } else {
+            Modifier.height(if (cinema) 40.dp else 58.dp)
+        }
+        TvAction(modifier = Modifier.fillMaxWidth().then(rowHeight).drawBehind(onDraw = {
             // Lazy rows can recompose separately as they enter the viewport. Resolve the fill when drawing.
             val focused = highlighted()
             val fill = when {
@@ -359,12 +366,22 @@ private fun ChannelRow(channel: Channel, displayName: String, index: Int, televi
                 selectedRowFocus.memory.remember(channel.sourceId, channel.id)
                 onFocused()
             }
-        }), onClick = onSelect, containerColor = Color.Transparent, focusHighlight = false, showUnfocusedBorder = !cinema, content = {
+        }), onClick = onSelect, containerColor = Color.Transparent, focusHighlight = false, showUnfocusedBorder = !cinema, fitContentHeight = hasPreview, content = {
             val focused = highlighted()
             val playing = selected()
-            Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, modifier = Modifier.width(if (television) 34.dp else 28.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
-                Text(text = displayName, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val titleBaseline = if (hasPreview) Modifier.alignByBaseline() else Modifier
+            Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, modifier = titleBaseline.width(if (television) 34.dp else 28.dp))
+            Column(modifier = titleBaseline.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
+                Text(text = displayName, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, lineHeight = if (hasPreview) 20.sp else androidx.compose.ui.unit.TextUnit.Unspecified, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (cinema && preview != null) {
+                    val guideColor = if (focused) FocusInk.copy(alpha = 0.75f) else Muted
+                    preview.current?.let(block = { title ->
+                        Text(text = stringResource(R.string.programme_current, title), color = guideColor, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    })
+                    preview.next?.let(block = { title ->
+                        Text(text = stringResource(R.string.programme_next, title), color = guideColor, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    })
+                }
                 if (!cinema) {
                     Text(text = if (showSource) channel.sourceName else stringResource(categoryLabel), color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, fontSize = if (television) 12.sp else 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

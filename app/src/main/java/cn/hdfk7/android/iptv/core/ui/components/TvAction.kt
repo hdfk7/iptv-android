@@ -10,6 +10,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,7 +34,7 @@ import androidx.compose.ui.unit.dp
 val LocalTvActionFocused = staticCompositionLocalOf(defaultFactory = { false })
 
 @Composable
-fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, enabled: Boolean = true, shape: Shape = RoundedCornerShape(16.dp), focusScale: Float = 1f, containerColor: Color = Panel, focusFill: Color = FocusFill, focusInk: Color = FocusInk, focusBorderWidth: Dp = 1.dp, contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 6.dp), focusHighlight: Boolean? = null, showUnfocusedBorder: Boolean = true, content: @Composable RowScope.() -> Unit) {
+fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, enabled: Boolean = true, shape: Shape = RoundedCornerShape(16.dp), focusScale: Float = 1f, containerColor: Color = Panel, focusFill: Color = FocusFill, focusInk: Color = FocusInk, focusBorderWidth: Dp = 1.dp, contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 6.dp), focusHighlight: Boolean? = null, showUnfocusedBorder: Boolean = true, fitContentHeight: Boolean = false, content: @Composable RowScope.() -> Unit) {
     var hasFocus by remember(calculation = { mutableStateOf(false) })
     val focused = focusHighlight ?: hasFocus
     val scale by animateFloatAsState(targetValue = if (focused && enabled) focusScale else 1f, animationSpec = tween(durationMillis = 140), label = "buttonFocusScale")
@@ -48,10 +49,11 @@ fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boole
             containerColor
         }
     }
+    val height = if (fitContentHeight) Modifier.defaultMinSize(minHeight = 46.dp) else Modifier.height(46.dp)
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(46.dp).graphicsLayer(block = { scaleX = scale; scaleY = scale }).onFocusChanged(onFocusChanged = { focus -> hasFocus = focus.isFocused }),
+        modifier = modifier.then(height).graphicsLayer(block = { scaleX = scale; scaleY = scale }).onFocusChanged(onFocusChanged = { focus -> hasFocus = focus.isFocused }),
         shape = shape,
         border = when {
             focused -> BorderStroke(focusBorderWidth, FocusBorder)

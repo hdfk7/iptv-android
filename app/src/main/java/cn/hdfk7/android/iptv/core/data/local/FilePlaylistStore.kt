@@ -2,7 +2,6 @@ package cn.hdfk7.android.iptv.core.data.local
 
 import android.util.AtomicFile
 import cn.hdfk7.android.iptv.core.data.repository.PlaylistStore
-import cn.hdfk7.android.iptv.core.model.Channel
 import cn.hdfk7.android.iptv.core.model.PlaylistSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,8 +21,8 @@ class FilePlaylistStore(directory: File, name: String) : PlaylistStore {
             val array = json.getJSONArray("channels")
             val channels = (0 until array.length()).map(transform = { index ->
                 val entry = array.getJSONObject(index)
-                val urls = entry.getJSONArray("streams")
-                val streams = (0 until urls.length()).map(transform = { urlIndex -> urls.getString(urlIndex) })
+                val channel = ChannelJson.decode(entry)
+                val streams = channel.streams
                 val hints = entry.optJSONObject("responseTimesMs")
                 val timings = if (hints == null) {
                     emptyMap()
@@ -33,7 +32,7 @@ class FilePlaylistStore(directory: File, name: String) : PlaylistStore {
                         if (time in 1..60_000) url to time else null
                     }).toMap()
                 }
-                Channel(entry.getString("name"), entry.getString("group"), streams, responseTimesMs = timings)
+                channel.copy(responseTimesMs = timings)
             })
             PlaylistSnapshot(channels, json.getLong("updatedAt"))
         }).getOrNull()
@@ -42,7 +41,7 @@ class FilePlaylistStore(directory: File, name: String) : PlaylistStore {
     override fun write(snapshot: PlaylistSnapshot) {
         val array = JSONArray()
         for (channel in snapshot.channels) {
-            val entry = JSONObject().put("name", channel.name).put("group", channel.group).put("streams", JSONArray(channel.streams))
+            val entry = ChannelJson.encode(channel)
             if (channel.responseTimesMs.isNotEmpty()) {
                 entry.put("responseTimesMs", JSONObject(channel.responseTimesMs))
             }

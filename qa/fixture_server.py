@@ -1,6 +1,7 @@
 """Isolated local TV QA playlists and a generated, rights-free test signal."""
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import json
 import re
 import threading
@@ -72,6 +73,66 @@ class FixtureHandler(BaseHTTPRequestHandler):
             while not self.server.release_hold.wait(2):
                 self.wfile.write(b"# QA keepalive\n")
                 self.wfile.flush()
+        if path == "/guide.xml":
+            self.send_response(302)
+            self.send_header("Location", "/guide-data.xml")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path == "/guide-data.xml":
+            now = datetime.now(timezone.utc)
+
+            def stamp(minutes):
+                return (now + timedelta(minutes=minutes)).strftime("%Y%m%d%H%M%S %z")
+
+            self.send_body(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE tv SYSTEM "xmltv.dtd">
+<tv>
+    <channel id="101"><display-name>QA Channel A</display-name></channel>
+    <programme channel="101" start="{stamp(-10)}" stop="{stamp(10)}"><title>QA Now &amp; Live</title></programme>
+    <programme channel="101" start="{stamp(10)}" stop="{stamp(30)}"><title>QA Next</title></programme>
+</tv>""", "application/xml")
+            return
+        if path == "/debug-smoke.m3u":
+            if self.server.mode == "http503":
+                self.send_body("deliberate update failure", status=503)
+                return
+            self.send_body("""#EXTM3U x-tvg-url="/guide.xml"
+#EXTINF:-1 tvg-id="qa-a",QA Channel A
+/fail-a.mp4
+#EXTINF:-1 tvg-id="qa-a",QA Channel A
+/media.mp4?smoke=a
+#EXTINF:-1,QA Channel B
+/media.mp4?smoke=b
+#EXTINF:-1,QA Channel C
+/stalling.m3u8
+#EXTINF:-1,QA Channel C
+/media.mp4?smoke=c
+""", "application/vnd.apple.mpegurl")
+            return
+        if path == "/stalling.m3u8":
+            self.send_body("""#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:5
+#EXTINF:5.0,
+/stall-start.ts
+#EXTINF:5.0,
+/stall-tail.ts
+#EXT-X-ENDLIST
+""", "application/vnd.apple.mpegurl")
+            return
+        if path == "/stall-start.ts":
+            data = self.server.media.with_suffix(".ts").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if path == "/stall-tail.ts":
+            time.sleep(30)
+            self.send_body("deliberate stall", status=503)
+            return
         if path.startswith("/fail"):
             self.send_body("deliberate QA failure", status=404)
             return

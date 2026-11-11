@@ -59,37 +59,42 @@ internal fun AppUpdateContent(
             }
         })
         Column(
-            modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth().heightIn(max = 480.dp)
-                .background(DialogSurface, RoundedCornerShape(22.dp)).padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(12.dp).widthIn(max = 460.dp).fillMaxWidth().heightIn(max = 480.dp)
+                .background(DialogSurface, RoundedCornerShape(22.dp)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             content = {
                 Text(text = stringResource(R.string.app_update_title), color = Color.White, fontSize = 22.sp)
-                Text(text = message, color = Accent, fontSize = 15.sp)
-                if (notes.isNotBlank() && !downloading) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = {
-                        Text(text = stringResource(R.string.app_update_notes, notesVersion), color = Accent,
-                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        for (line in notes.lineSequence().map(transform = String::trim).filter(predicate = String::isNotEmpty)) {
-                            if (line.startsWith("• ") || line.startsWith("- ")) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
-                                    Text(text = "•", color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
-                                    Text(text = line.drop(2).trimStart(), color = Muted, fontSize = 14.sp,
-                                        lineHeight = 21.sp, modifier = Modifier.weight(1f))
-                                })
+                Column(
+                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = {
+                        Text(text = message, color = Accent, fontSize = 15.sp)
+                        if (notes.isNotBlank() && !downloading) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = {
+                                Text(text = stringResource(R.string.app_update_notes, notesVersion), color = Accent,
+                                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                for (line in notes.lineSequence().map(transform = String::trim).filter(predicate = String::isNotEmpty)) {
+                                    if (line.startsWith("• ") || line.startsWith("- ")) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
+                                            Text(text = "•", color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                                            Text(text = line.drop(2).trimStart(), color = Muted, fontSize = 14.sp,
+                                                lineHeight = 21.sp, modifier = Modifier.weight(1f))
+                                        })
+                                    } else {
+                                        Text(text = line, color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                                    }
+                                }
+                            })
+                        }
+                        if (downloading) {
+                            if (fraction == null || validating) {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             } else {
-                                Text(text = line, color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                                LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
                             }
                         }
-                    })
-                }
-                if (downloading) {
-                    if (fraction == null || validating) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    } else {
-                        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
                     }
-                }
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
                     TvAction(
                         onClick = onClose,

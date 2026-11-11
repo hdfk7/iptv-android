@@ -35,6 +35,7 @@ object ChannelAggregation {
             first.copy(
                 name = ChannelNames.display(first.name),
                 group = entries.firstOrNull(predicate = { channel -> channel.group.isNotBlank() })?.group.orEmpty(),
+                guideRefs = entries.flatMap(transform = { channel -> channel.guideRefs }).distinct(),
                 streams = entries.flatMap(transform = { channel -> channel.streams }).distinct(),
                 sourceId = sourceId ?: first.sourceId,
                 sourceName = entries.map(transform = { channel -> channel.sourceName }).filter(predicate = { name -> name.isNotBlank() }).distinct().joinToString(" / ")

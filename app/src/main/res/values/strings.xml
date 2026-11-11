@@ -141,4 +141,9 @@
     <string name="channel_category_greater_china">港澳台频道</string>
     <string name="channel_category_sports">体育频道</string>
     <string name="channel_category_other">其他频道</string>
+    <string name="resume_enabled">启动时继续观看 · 开</string>
+    <string name="resume_disabled">启动时继续观看 · 关</string>
+    <string name="programme_current">正在播 · %1$s</string>
+    <string name="programme_next">接下来 · %1$s</string>
+    <string name="recent_channels">最近</string>
 </resources>

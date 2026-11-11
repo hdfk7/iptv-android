@@ -70,6 +70,8 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
                 SettingsPage.Menu -> {
                     HomeSettingsDialog(
                         onClose = { settingsPage = null },
+                        resumeEnabled = viewModel.resumeEnabled,
+                        onToggleResume = viewModel::toggleResume,
                         onProxy = {
                             settingsMenuEntry = SettingsPage.Proxy
                             settingsPage = SettingsPage.Proxy
@@ -97,10 +99,11 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
 private enum class SettingsPage { Menu, Proxy, Update }
 
 @Composable
-private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdate: () -> Unit, television: Boolean, entry: SettingsPage): Unit {
+private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdate: () -> Unit, resumeEnabled: Boolean, onToggleResume: () -> Unit, television: Boolean, entry: SettingsPage): Unit {
     val closeFocus = remember(calculation = { FocusRequester() })
     val proxyFocus = remember(calculation = { FocusRequester() })
     val updateFocus = remember(calculation = { FocusRequester() })
+    val resumeFocus = remember(calculation = { FocusRequester() })
     SettingsMenuContainer(television = television, onClose = onClose, content = {
         val inputMode = LocalInputModeManager.current
         val windowFocused = LocalWindowInfo.current.isWindowFocused
@@ -129,7 +132,9 @@ private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdat
             Modifier
         }
         val updateNavigation = if (television) {
-            Modifier.focusRequester(updateFocus).focusProperties(scope = { canFocus = true }).tvDirections(up = { proxyFocus.requestFocus() })
+            Modifier.focusRequester(updateFocus).focusProperties(scope = { canFocus = true }).tvDirections(
+                up = { proxyFocus.requestFocus() }, down = { resumeFocus.requestFocus() }
+            )
         } else {
             Modifier
         }
@@ -143,6 +148,17 @@ private fun HomeSettingsDialog(onClose: () -> Unit, onProxy: () -> Unit, onUpdat
                 })
                 SettingsEntry(icon = R.drawable.ic_settings, title = stringResource(R.string.proxy_title), onClick = onProxy, modifier = proxyNavigation)
                 SettingsEntry(icon = R.drawable.ic_update, title = stringResource(R.string.app_update_title), onClick = onUpdate, modifier = updateNavigation)
+                val resumeNavigation = if (television) {
+                    Modifier.focusRequester(resumeFocus).tvDirections(up = { updateFocus.requestFocus() })
+                } else {
+                    Modifier
+                }
+                SettingsEntry(
+                    icon = R.drawable.ic_play,
+                    title = stringResource(if (resumeEnabled) R.string.resume_enabled else R.string.resume_disabled),
+                    onClick = onToggleResume,
+                    modifier = resumeNavigation
+                )
             }
         )
     })

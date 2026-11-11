@@ -1,7 +1,7 @@
 package cn.hdfk7.android.iptv.core.model
 
 internal enum class DomesticChannelGroup {
-    ALL, CCTV, SATELLITE, OTHER
+    ALL, CCTV, SATELLITE, OTHER, RECENT
 }
 
 internal fun groupDomesticChannels(channels: List<Channel>): Map<DomesticChannelGroup, List<Channel>> {

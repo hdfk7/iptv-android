@@ -92,6 +92,22 @@ class PlaybackLineRankingTests {
     }
 
     @Test
+    fun ranksPersistedMeasurementsAfterRecreationAndIgnoresRemovedUrls(): Unit {
+        val data = mutableMapOf<Pair<String, String>, LineQuality>()
+        fun ranking(): PlaybackLineRanking {
+            return PlaybackLineRanking(
+                readHistory = { program, url -> data[program to url] },
+                writeHistory = { program, url, quality -> data[program to url] = quality }
+            )
+        }
+        val initial = ranking()
+        initial.failed("program", "first")
+        initial.record("program", "second", LineQuality(playedMs = 6000))
+        assertEquals(listOf("second", "third", "first"), ranking().lines("program", urls).map(transform = { line -> line.url }))
+        assertEquals(listOf("third", "first"), ranking().lines("program", listOf("first", "third")).map(transform = { line -> line.url }))
+    }
+
+    @Test
     fun measurementsAreIsolatedByProgramAndResetWithSourceRefresh(): Unit {
         val ranking = PlaybackLineRanking()
         ranking.failed("program", "first")

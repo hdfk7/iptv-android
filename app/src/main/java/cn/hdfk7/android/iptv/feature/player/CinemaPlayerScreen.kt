@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.core.data.repository.LibraryRules
+import cn.hdfk7.android.iptv.core.model.RecentChannels
 import cn.hdfk7.android.iptv.core.model.DomesticChannelGroup
 import cn.hdfk7.android.iptv.core.model.groupDomesticChannels
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
@@ -68,8 +69,13 @@ internal fun CinemaPlayerScreen(
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val hasChannels = state.channels.isNotEmpty()
     val domestic = state.sources.any(predicate = { source -> source.id == state.activeSourceId && LibraryRules.isDomestic(source) })
-    val groups = remember(domestic, state.channels, calculation = {
-        if (domestic) groupDomesticChannels(state.channels) else emptyMap()
+    val groups = remember(domestic, state.channels, state.recentChannelIds, calculation = {
+        val catalog = if (domestic) {
+            groupDomesticChannels(state.channels)
+        } else {
+            mapOf(DomesticChannelGroup.ALL to state.channels)
+        }
+        catalog + (DomesticChannelGroup.RECENT to RecentChannels.visible(state.recentChannelIds, state.channels))
     })
     val availableGroups = remember(groups, calculation = {
         groups.filterValues(predicate = { channels -> channels.isNotEmpty() }).keys.toList()
@@ -83,7 +89,7 @@ internal fun CinemaPlayerScreen(
     }
     val displayName = if (displayChannel != null) domesticDisplayName(displayChannel) else state.selectedName
     val visiblePanel = if (state.infoVisible) panel else TvPanel.Controls
-    val keepFocusInDrawer = television && visiblePanel == TvPanel.Channels && domestic && hasChannels
+    val keepFocusInDrawer = television && visiblePanel == TvPanel.Channels && availableGroups.size > 1 && hasChannels
     val keepFocusInMore = television && visiblePanel == TvPanel.More
     val showPanel: (TvPanel) -> Unit = { target ->
         returnToMore = target == TvPanel.More || (target == TvPanel.Controls && panel == TvPanel.More)
@@ -212,6 +218,7 @@ internal fun CinemaPlayerScreen(
         }
         PlaybackSurface(
             state = state,
+            showPlaybackStatus = !dialogOpen && visiblePanel == TvPanel.Controls,
             modifier = Modifier.fillMaxSize().then(surfaceInput)
         )
         if (state.infoVisible && !dialogOpen) {
@@ -264,7 +271,7 @@ internal fun CinemaPlayerScreen(
                         requestDrawerFocus = television && windowFocused,
                         groupControls = {
                             if (availableGroups.size > 1) {
-                                DomesticChannelControls(availableGroups, activeGroup, television, onSelect = { group -> selectedGroup = group })
+                                ChannelGroupControls(availableGroups, activeGroup, television, onSelect = { group -> selectedGroup = group })
                             }
                         }
                     )
