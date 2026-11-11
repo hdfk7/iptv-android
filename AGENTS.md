@@ -24,3 +24,13 @@ Create or push a Git release tag only when the user explicitly requests that act
 Use concise Conventional Commit subjects with a Chinese summary (`feat:完善节目收藏`). Keep each commit focused and describe affected modules and verification in PRs. Ignore build output, IDE caches and local.properties. By the user's explicit instruction, the local APK signing file `signing/sign` and APK_SIGN_* settings in gradle.properties are included as project files and must not be added to ignore rules. Do not print signing passwords in logs or reports. Debug uses .debug application ID suffix; release uses the base ID. APK filenames use app name, build type, version and timestamp.
 
 Refresh on foreground entry and manual action only. Do not schedule periodic refresh. Do not add compatibility paths solely to migrate data or jobs from earlier app versions. Proxy settings apply to playlist and Media3 networking; never send proxy credentials as origin Authorization headers or log secrets.
+
+## Panel remote navigation
+
+By the user's explicit instruction, all TV panels must follow the single-focus approach proven in the More menu and programme guide. This applies to the channel panel, settings, source management, add/edit forms, delete confirmations, proxy settings and update dialogs, including future panels.
+
+- The panel owns one native focus target and handles remote direction and confirm keys centrally. Buttons, tabs and list rows are logical selections; do not give each item its own native focus requester or retry loop.
+- Keep selection and scrolling state explicit. Draw the selected item's focus highlight from the panel, using the shared focus theme, so the visible highlight follows remote input immediately.
+- Text inputs may receive native focus while editing. Provide an explicit transition into editing and back to panel navigation, preserving text entry and IME behavior.
+- Preserve established behavior: from any channel Tab, DOWN selects the currently playing channel if present in that Tab, otherwise its first channel. Browsing does not change playback until confirmation. Returning from child dialogs restores the originating selection.
+- Reuse shared panel navigation behavior; do not reintroduce per-item focus patches as an alternative implementation.
