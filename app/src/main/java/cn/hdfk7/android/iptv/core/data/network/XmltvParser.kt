@@ -4,6 +4,7 @@ import android.util.Xml
 import cn.hdfk7.android.iptv.core.model.Programme
 import cn.hdfk7.android.iptv.core.model.ChannelNames
 import cn.hdfk7.android.iptv.core.model.GuideRef
+import cn.hdfk7.android.iptv.core.model.programmeDay
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -39,6 +40,7 @@ internal fun parseXmltv(text: String, refs: List<GuideRef>, now: Long): Map<Guid
     var inTitle = false
     var root = false
     val horizon = now + 48 * 60 * 60 * 1000L
+    val dayStart = programmeDay(now).first
     var event = parser.nextToken()
     while (event != XmlPullParser.END_DOCUMENT) {
         when {
@@ -86,7 +88,7 @@ internal fun parseXmltv(text: String, refs: List<GuideRef>, now: Long): Map<Guid
                 inTitle = false
             }
             event == XmlPullParser.END_TAG && parser.depth == 2 && parser.name == "programme" -> {
-                if (channel != null && start != null && end != null && end > start && end > now && start < horizon && !title.isNullOrBlank()) {
+                if (channel != null && start != null && end != null && end > start && end > dayStart && start < horizon && !title.isNullOrBlank()) {
                     result.getOrPut(channel, defaultValue = { mutableListOf() }).add(Programme(title.trim(), start, end))
                 }
                 channel = null

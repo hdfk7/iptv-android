@@ -20,6 +20,8 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 
+internal class PreviewFrameRequest(val key: String, val standby: Boolean)
+
 /** Keep the video surface attached while opening and closing controls. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
@@ -31,25 +33,27 @@ internal fun PlaybackVideo(viewModel: PlayerViewModel): Unit {
         if (request == null) {
             return@LaunchedEffect
         }
-        val sample = Bitmap.createBitmap(48, 27, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(sample.width * sample.height)
+        val scale = 480f / maxOf(videoSurface.width, videoSurface.height, 1)
+        val sample = Bitmap.createBitmap(
+            (videoSurface.width * scale).toInt().coerceAtLeast(1),
+            (videoSurface.height * scale).toInt().coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
         val handler = Handler(Looper.getMainLooper())
         val deadline = SystemClock.elapsedRealtime() + 2_000L
         do {
             if (copyFrame(videoSurface, sample, handler)) {
-                sample.getPixels(pixels, 0, sample.width, 0, 0, sample.width, sample.height)
-                val visiblePixels = pixels.count(predicate = { color ->
-                    maxOf((color shr 16) and 255, (color shr 8) and 255, color and 255) > 24
-                })
-                if (visiblePixels >= pixels.size / 20) {
-                    viewModel.finishPreviewFrame(request, visible = true)
+                if (hasVisiblePicture(sample)) {
+                    viewModel.finishPreviewFrame(request, frame = sample)
                     return@LaunchedEffect
                 }
-                viewModel.skipBlackPreviewFrame(request)
+                if (request.standby) {
+                    viewModel.skipBlackPreviewFrame(request)
+                }
             }
             delay(80)
         } while (SystemClock.elapsedRealtime() < deadline)
-        viewModel.finishPreviewFrame(request, visible = false)
+        viewModel.finishPreviewFrame(request, frame = null)
     })
     AndroidView(
         modifier = Modifier.fillMaxSize(),
@@ -64,6 +68,21 @@ internal fun PlaybackVideo(viewModel: PlayerViewModel): Unit {
         onRelease = { video -> video.player = null },
         update = { video -> video.player = viewModel.player }
     )
+}
+
+private fun hasVisiblePicture(frame: Bitmap): Boolean {
+    val columns = 48
+    val rows = 27
+    var visiblePixels = 0
+    for (row in 0 until rows) {
+        for (column in 0 until columns) {
+            val color = frame.getPixel(column * frame.width / columns, row * frame.height / rows)
+            if (maxOf((color shr 16) and 255, (color shr 8) and 255, color and 255) > 24) {
+                visiblePixels += 1
+            }
+        }
+    }
+    return visiblePixels >= columns * rows / 20
 }
 
 private suspend fun copyFrame(surface: SurfaceView, sample: Bitmap, handler: Handler): Boolean {

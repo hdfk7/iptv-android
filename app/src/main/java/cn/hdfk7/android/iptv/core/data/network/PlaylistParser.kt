@@ -7,7 +7,7 @@ import cn.hdfk7.android.iptv.core.model.GuideRef
 
 /** Extended M3U channel catalog; HLS manifests are media, not channel catalogs. */
 class PlaylistParser {
-    private data class Entry(val name: String, var group: String, val urls: MutableMap<String, Int?> = linkedMapOf(), val guideRefs: MutableSet<GuideRef> = linkedSetOf())
+    private data class Entry(val name: String, var group: String, val urls: MutableMap<String, Int?> = linkedMapOf(), val guideIds: MutableSet<String> = linkedSetOf())
 
     private val header = Regex("""#EXTM3U(?:\s.*)?""")
     private val guideAddress = Regex("""(?:^|\s)(?:x-tvg-url|url-tvg)="([^"]*)"""")
@@ -69,9 +69,7 @@ class PlaylistParser {
                     if (entry.group.isBlank()) {
                         entry.group = group
                     }
-                    entry.guideRefs.addAll(guides.map(transform = { address ->
-                        GuideRef(address, channelGuideId, entry.name)
-                    }))
+                    entry.guideIds.add(channelGuideId)
                     val url = uri.toString()
                     if (entry.urls[url] == null) {
                         entry.urls[url] = latency
@@ -81,7 +79,11 @@ class PlaylistParser {
         }
         return channels.values.map(transform = { entry ->
             val timings = entry.urls.entries.mapNotNull(transform = { line -> line.value?.let(block = { time -> line.key to time }) }).toMap()
-            Channel(entry.name, entry.group, entry.urls.keys.toList(), responseTimesMs = timings, guideRefs = entry.guideRefs.toList())
+            val refs = entry.guideIds.flatMap(transform = { id ->
+                guides.map(transform = { address -> GuideRef(address, id, entry.name) })
+            })
+            Channel(entry.name, entry.group, entry.urls.keys.toList(), responseTimesMs = timings,
+                guideRefs = refs, guideIds = entry.guideIds.filter(predicate = String::isNotEmpty))
         })
     }
 

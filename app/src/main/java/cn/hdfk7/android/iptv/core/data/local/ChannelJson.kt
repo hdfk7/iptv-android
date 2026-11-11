@@ -14,12 +14,16 @@ internal object ChannelJson {
                 JSONObject().put("address", ref.address).put("id", ref.channelId).put("name", ref.channelName)
             })))
         }
+        if (channel.guideIds.isNotEmpty()) {
+            entry.put("guideIds", JSONArray(channel.guideIds))
+        }
         return entry
     }
 
     fun decode(json: JSONObject): Channel {
         val urls = json.getJSONArray("streams")
         val guideRefs = json.optJSONArray("guideRefs")
+        val guideIds = json.optJSONArray("guideIds")
         return Channel(
             name = json.getString("name"),
             group = json.getString("group"),
@@ -28,6 +32,9 @@ internal object ChannelJson {
             sourceName = json.optString("sourceName"),
             guideRefs = (0 until (guideRefs?.length() ?: 0)).mapNotNull(transform = { index ->
                 guideRefs?.optJSONObject(index)?.let(block = { ref -> GuideRef(ref.getString("address"), ref.getString("id"), ref.optString("name")) })
+            }),
+            guideIds = (0 until (guideIds?.length() ?: 0)).mapNotNull(transform = { index ->
+                guideIds?.optString(index)?.takeIf(predicate = String::isNotEmpty)
             })
         )
     }

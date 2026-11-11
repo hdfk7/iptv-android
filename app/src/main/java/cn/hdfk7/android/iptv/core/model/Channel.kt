@@ -7,7 +7,8 @@ data class Channel(
     val sourceId: String = "",
     val sourceName: String = "",
     val responseTimesMs: Map<String, Int> = emptyMap(),
-    val guideRefs: List<GuideRef> = emptyList()
+    val guideRefs: List<GuideRef> = emptyList(),
+    val guideIds: List<String> = emptyList()
 ) {
     val key: String = ChannelNames.key(name)
     val id: String = "$sourceId/$key"

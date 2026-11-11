@@ -40,7 +40,8 @@ class SourceManagerViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun edit(source: PlaylistSource) {
-        mutableState.value = state.value.copy(draft = SourceDraft(source.id, source.name, source.url), error = null)
+        mutableState.value = state.value.copy(
+            draft = SourceDraft(source.id, source.name, source.url, source.guideAddress.orEmpty()), error = null)
     }
 
     fun editName(name: String) {
@@ -53,13 +54,18 @@ class SourceManagerViewModel(application: Application) : AndroidViewModel(applic
         mutableState.value = state.value.copy(draft = draft.copy(address = address), error = null)
     }
 
+    fun editGuideAddress(address: String): Unit {
+        val draft = state.value.draft ?: return
+        mutableState.value = state.value.copy(draft = draft.copy(guideAddress = address), error = null)
+    }
+
     fun askDelete(source: PlaylistSource) {
         mutableState.value = state.value.copy(deleting = source, error = null)
     }
 
     fun save() {
         val draft = state.value.draft ?: return
-        perform(action = { repository.saveSource(draft.id, draft.name, draft.address) }, close = false)
+        perform(action = { repository.saveSource(draft.id, draft.name, draft.address, draft.guideAddress) }, close = false)
     }
 
     fun delete() {
@@ -95,6 +101,9 @@ class SourceManagerViewModel(application: Application) : AndroidViewModel(applic
                     }
                     LibraryError.ADDRESS -> {
                         R.string.source_address_error
+                    }
+                    LibraryError.GUIDE_ADDRESS -> {
+                        R.string.source_guide_address_error
                     }
                     LibraryError.DUPLICATE -> {
                         R.string.source_duplicate

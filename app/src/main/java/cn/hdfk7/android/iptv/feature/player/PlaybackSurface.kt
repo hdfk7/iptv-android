@@ -1,5 +1,6 @@
 package cn.hdfk7.android.iptv.feature.player
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +17,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -33,6 +37,16 @@ internal fun PlaybackSurface(
     modifier: Modifier
 ): Unit {
     Box(modifier = modifier, contentAlignment = Alignment.Center, content = {
+        val cachedFrame = state.cachedPreviewFrame?.takeIf(predicate = { state.playback == PlaybackStatus.IDLE })
+        if (cachedFrame != null) {
+            Image(
+                bitmap = remember(cachedFrame, calculation = { cachedFrame.asImageBitmap() }),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().background(Color.Black),
+                contentScale = ContentScale.Fit
+            )
+        }
+        val showPicture = state.previewFrameVisible || cachedFrame != null
         when (state.playback) {
             PlaybackStatus.PLAYING -> Unit
             PlaybackStatus.PAUSED -> {
@@ -42,7 +56,7 @@ internal fun PlaybackSurface(
                 }
             }
             else -> Column(
-                modifier = if (state.previewFrameVisible) {
+                modifier = if (showPicture) {
                     Modifier.fillMaxSize()
                 } else {
                     Modifier.fillMaxSize().background(Brush.radialGradient(listOf(PanelAlt, BackdropBottom)))
@@ -65,7 +79,7 @@ internal fun PlaybackSurface(
                         }
                         Box(
                             modifier = Modifier.size(60.dp).clip(CircleShape).then(playAction)
-                                .background(if (state.previewFrameVisible) Color.Black.copy(alpha = 0.6f)
+                                .background(if (showPicture) Color.Black.copy(alpha = 0.6f)
                                     else Color.White.copy(alpha = 0.05f), CircleShape)
                                 .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape),
                             contentAlignment = Alignment.Center,

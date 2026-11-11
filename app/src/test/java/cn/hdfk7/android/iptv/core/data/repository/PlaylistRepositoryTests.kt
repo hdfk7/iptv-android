@@ -15,6 +15,28 @@ class PlaylistRepositoryTests {
     private val initial = SourceLibrary(listOf(first, second), first.id)
 
     @Test
+    fun explicitGuideUpdatesCachedChannelsAndSurvivesDeletionInFavorites(): Unit = runBlocking(block = {
+        val address = "https://example.org/schedule.xml"
+        val repository = repository(MemoryLibrary(initial), mutableMapOf(), { _ ->
+            "#EXTM3U\n#EXTINF:-1 tvg-id=\"station-42\",Station\n/live"
+        })
+        repository.refresh()
+        assertTrue(repository.state.value.channels.single().guideRefs.isEmpty())
+        repository.saveSource(first.id, first.name, first.url, address)
+        val channel = repository.state.value.channels.single()
+        val expected = listOf(GuideRef(address, "station-42", "Station"))
+        assertEquals(expected, channel.guideRefs)
+        repository.toggleFavorite(channel)
+        repository.activate(SourceLibrary.FAVORITES_ID)
+        assertEquals(expected, repository.state.value.channels.single().guideRefs)
+        repository.saveSource(first.id, first.name, first.url, "")
+        assertTrue(repository.state.value.channels.single().guideRefs.isEmpty())
+        repository.saveSource(first.id, first.name, first.url, address)
+        repository.deleteSource(first.id)
+        assertEquals(expected, repository.state.value.channels.single().guideRefs)
+    })
+
+    @Test
     fun domesticTimingsDoNotLeakIntoFavoritesOrAnEditedSource(): Unit = runBlocking(block = {
         val domestic = LibraryRules.defaults().sources.first().copy(name = "我的直播")
         val storage = MemoryLibrary(SourceLibrary(listOf(domestic, second), domestic.id))

@@ -1,6 +1,6 @@
 package cn.hdfk7.android.iptv.core.model
 
-data class PlaylistSource(val id: String, val name: String, val url: String)
+data class PlaylistSource(val id: String, val name: String, val url: String, val guideAddress: String? = null)
 
 data class SourceLibrary(
     val sources: List<PlaylistSource>,
@@ -22,6 +22,6 @@ data class CatalogState(
     val storageFailed: Boolean = false
 )
 
-enum class LibraryError { NAME, ADDRESS, DUPLICATE, MISSING, STORAGE }
+enum class LibraryError { NAME, ADDRESS, GUIDE_ADDRESS, DUPLICATE, MISSING, STORAGE }
 
 class LibraryException(val error: LibraryError) : Exception(error.name)

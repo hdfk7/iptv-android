@@ -23,7 +23,8 @@ class FileLibraryStore(directory: File) : LibraryStore {
         val favoriteArray = json.getJSONArray("favorites")
         val sources = (0 until sourceArray.length()).map(transform = { index ->
             val source = sourceArray.getJSONObject(index)
-            PlaylistSource(source.getString("id"), source.getString("name"), source.getString("url"))
+            PlaylistSource(source.getString("id"), source.getString("name"), source.getString("url"),
+                source.optString("guideAddress").takeIf(predicate = String::isNotBlank))
         })
         val favorites = (0 until favoriteArray.length()).map(transform = { index -> ChannelJson.decode(favoriteArray.getJSONObject(index)) })
         return SourceLibrary(sources, json.getString("activeSourceId"), favorites)
@@ -32,7 +33,8 @@ class FileLibraryStore(directory: File) : LibraryStore {
     override fun write(library: SourceLibrary) {
         val sources = JSONArray()
         for (source in library.sources) {
-            sources.put(JSONObject().put("id", source.id).put("name", source.name).put("url", source.url))
+            sources.put(JSONObject().put("id", source.id).put("name", source.name).put("url", source.url)
+                .put("guideAddress", source.guideAddress))
         }
         val favorites = JSONArray()
         for (favorite in library.favorites) {

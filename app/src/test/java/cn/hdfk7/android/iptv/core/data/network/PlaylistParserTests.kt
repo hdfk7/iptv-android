@@ -6,6 +6,15 @@ import org.junit.jupiter.api.Test
 
 class PlaylistParserTests {
     @Test
+    fun retainsChannelIdForAnExplicitGuideAddedLater(): Unit {
+        val channel = PlaylistParser().parse(
+            "#EXTM3U\n#EXTINF:-1 tvg-id=\"station-42\",Station Name\n/live.m3u8",
+            "https://example.org/list.m3u"
+        ).single()
+        assertEquals(listOf("station-42"), channel.guideIds)
+        assertEquals(emptyList<Any>(), channel.guideRefs)
+    }
+    @Test
     fun usesConfiguredGuideOnlyWhenPlaylistDoesNotDeclareOne(): Unit {
         val channels = "\n#EXTINF:-1 tvg-id=\"CCTV1\",CCTV1\nhttps://example.org/live"
         val source = "https://example.org/list.m3u"

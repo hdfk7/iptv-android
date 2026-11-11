@@ -54,6 +54,7 @@ internal fun CinemaPlayerScreen(
     viewModel: PlayerViewModel,
     onSources: () -> Unit,
     onSettings: () -> Unit,
+    onGuide: (String) -> Unit,
     selectedRowFocus: ChannelListFocus,
     dialogOpen: Boolean,
     television: Boolean
@@ -65,9 +66,13 @@ internal fun CinemaPlayerScreen(
     val channelsFocus = remember(calculation = { FocusRequester() })
     val moreFocus = remember(calculation = { FocusRequester() })
     val firstMenuFocus = remember(calculation = { FocusRequester() })
+    val guideFocus = remember(calculation = { FocusRequester() })
     val inputMode = LocalInputModeManager.current
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val hasChannels = state.channels.isNotEmpty()
+    val guideChannel = state.channels.firstOrNull(predicate = { channel ->
+        channel.id == state.selectedId && channel.guideRefs.isNotEmpty()
+    })
     val domestic = state.sources.any(predicate = { source -> source.id == state.activeSourceId && LibraryRules.isDomestic(source) })
     val groups = remember(domestic, state.channels, state.recentChannelIds, calculation = {
         val catalog = if (domestic) {
@@ -264,12 +269,27 @@ internal fun CinemaPlayerScreen(
                         },
                         onRight = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
                         onLeftToHeader = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
-                        onTopBoundary = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
+                        onTopBoundary = {
+                            if (guideChannel != null) {
+                                guideFocus.requestFocus()
+                            } else if (!keepFocusInDrawer) {
+                                channelsFocus.requestFocus()
+                            }
+                        },
                         onBottomBoundary = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
                         cinema = true,
                         domestic = domestic,
                         groupKey = activeGroup.name,
                         requestDrawerFocus = television && windowFocused,
+                        headerAction = {
+                            if (guideChannel != null) {
+                                TvAction(onClick = { onGuide(guideChannel.id) },
+                                    modifier = Modifier.focusRequester(guideFocus),
+                                    contentPadding = PaddingValues(horizontal = 8.dp), content = {
+                                        Text(text = stringResource(R.string.guide_action), fontSize = 12.sp, maxLines = 1)
+                                    })
+                            }
+                        },
                         groupControls = {
                             if (availableGroups.size > 1) {
                                 ChannelGroupControls(availableGroups, activeGroup, television, onSelect = { group -> selectedGroup = group })

@@ -33,7 +33,9 @@ object LibraryRules {
         return library.copy(sources = sources, activeSourceId = sources.first().id)
     }
 
-    fun normalizeAddress(address: String): String {
+    fun normalizeAddress(address: String): String = normalizeAddress(address, allowRepositoryDefaults = true)
+
+    private fun normalizeAddress(address: String, allowRepositoryDefaults: Boolean): String {
         val input = address.trim()
         val uri = runCatching(block = { URI(input) }).getOrNull()
         val valid = uri != null && uri.scheme?.lowercase() in listOf("http", "https") && !uri.host.isNullOrBlank() &&
@@ -43,13 +45,13 @@ object LibraryRules {
         }
         if (uri.host.equals("github.com", ignoreCase = true)) {
             val path = uri.path.trim('/').removeSuffix(".git")
-            if (path.equals("best-fan/iptv-sources", ignoreCase = true)) {
+            if (allowRepositoryDefaults && path.equals("best-fan/iptv-sources", ignoreCase = true)) {
                 return DEFAULT_URL
             }
-            if (path.equals("suxuang/myIPTV", ignoreCase = true)) {
+            if (allowRepositoryDefaults && path.equals("suxuang/myIPTV", ignoreCase = true)) {
                 return MYIPTV_URL
             }
-            if (path.equals("iptv-org/iptv", ignoreCase = true)) {
+            if (allowRepositoryDefaults && path.equals("iptv-org/iptv", ignoreCase = true)) {
                 return IPTV_ORG_URL
             }
             val parts = uri.rawPath.trim('/').split('/')
@@ -61,7 +63,8 @@ object LibraryRules {
         return uri.toASCIIString()
     }
 
-    fun save(library: SourceLibrary, id: String?, name: String, address: String, newId: String = UUID.randomUUID().toString()): SourceLibrary {
+    fun save(library: SourceLibrary, id: String?, name: String, address: String,
+        newId: String = UUID.randomUUID().toString(), guideAddress: String? = null): SourceLibrary {
         val cleanName = name.trim()
         if (cleanName.isBlank() || cleanName.length > 48) {
             throw LibraryException(LibraryError.NAME)
@@ -74,7 +77,14 @@ object LibraryRules {
         if (duplicate) {
             throw LibraryException(LibraryError.DUPLICATE)
         }
-        val source = PlaylistSource(id ?: newId, cleanName, url)
+        val guide = guideAddress?.takeIf(predicate = String::isNotBlank)?.let(block = { input ->
+            try {
+                normalizeAddress(input, allowRepositoryDefaults = false)
+            } catch (exception: LibraryException) {
+                throw LibraryException(LibraryError.GUIDE_ADDRESS)
+            }
+        })
+        val source = PlaylistSource(id ?: newId, cleanName, url, guide)
         val sources = if (id == null) {
             library.sources + source
         } else {

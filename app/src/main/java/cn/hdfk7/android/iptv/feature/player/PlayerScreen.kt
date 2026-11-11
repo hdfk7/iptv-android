@@ -39,10 +39,12 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
     val state by viewModel.state.collectAsStateWithLifecycle()
     val sourceUi by sourceViewModel.state.collectAsStateWithLifecycle()
     var settingsPage by remember(calculation = { mutableStateOf<SettingsPage?>(null) })
+    var guideChannelId by remember(state.activeSourceId, calculation = { mutableStateOf<String?>(null) })
+    val guideChannel = state.channels.firstOrNull(predicate = { channel -> channel.id == guideChannelId })
     var settingsMenuEntry by remember(calculation = { mutableStateOf(SettingsPage.Proxy) })
     val app = LocalContext.current.applicationContext as IptvApplication
     val selectedRowFocus = remember(key1 = viewModel, calculation = { ChannelListFocus(viewModel.channelFocusMemory) })
-    val dialogOpen = sourceUi.open || settingsPage != null
+    val dialogOpen = sourceUi.open || settingsPage != null || guideChannel != null
     LaunchedEffect(key1 = dialogOpen, block = {
         onDialogStateChanged(dialogOpen)
     })
@@ -61,11 +63,20 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
                     settingsMenuEntry = SettingsPage.Proxy
                     settingsPage = SettingsPage.Menu
                 },
+                onGuide = { id -> guideChannelId = id },
                 selectedRowFocus = selectedRowFocus,
                 dialogOpen = dialogOpen,
                 television = television
             )
             SourceManagerDialog(viewModel = sourceViewModel)
+            if (guideChannel != null) {
+                ProgrammeScheduleDialog(
+                    channelName = guideChannel.name,
+                    programmes = state.programmeSchedules[guideChannel.id].orEmpty(),
+                    television = television,
+                    onClose = { guideChannelId = null }
+                )
+            }
             when (settingsPage) {
                 SettingsPage.Menu -> {
                     HomeSettingsDialog(

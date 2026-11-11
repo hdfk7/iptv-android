@@ -79,7 +79,18 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if path == "/guide-data.xml":
+        if path == "/release.m3u":
+            self.send_body("""#EXTM3U
+#EXTINF:-1 tvg-id="101",QA Release
+/fail-release.mp4
+#EXTINF:-1 tvg-id="101",QA Release
+/media.mp4?release=1
+""", "application/vnd.apple.mpegurl")
+            return
+        if path == "/release-guide.xml" and self.server.mode == "release-offline":
+            self.send_body("deliberate guide failure", status=503)
+            return
+        if path in ("/guide-data.xml", "/release-guide.xml"):
             now = datetime.now(timezone.utc)
 
             def stamp(minutes):
@@ -89,6 +100,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
 <!DOCTYPE tv SYSTEM "xmltv.dtd">
 <tv>
     <channel id="101"><display-name>QA Channel A</display-name></channel>
+    <programme channel="101" start="{stamp(-30)}" stop="{stamp(-10)}"><title>QA Earlier</title></programme>
     <programme channel="101" start="{stamp(-10)}" stop="{stamp(10)}"><title>QA Now &amp; Live</title></programme>
     <programme channel="101" start="{stamp(10)}" stop="{stamp(30)}"><title>QA Next</title></programme>
 </tv>""", "application/xml")
@@ -137,6 +149,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.send_body("deliberate QA failure", status=404)
             return
         if path in ["/media.mp4", "/slow.mp4"]:
+            if self.server.mode == "release-offline" and urlparse(self.path).query == "release=1":
+                self.send_body("deliberate media failure", status=503)
+                return
             if path == "/slow.mp4":
                 time.sleep(12)
             self.serve_media()

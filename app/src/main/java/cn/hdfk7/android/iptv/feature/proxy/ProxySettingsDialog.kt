@@ -1,5 +1,6 @@
 package cn.hdfk7.android.iptv.feature.proxy
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,9 +10,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -37,6 +40,10 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         error = null
     }
     val focus = remember(calculation = { FocusRequester() })
+    val configuration = LocalConfiguration.current
+    val compact = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        configuration.screenWidthDp >= 480 &&
+        configuration.uiMode and Configuration.UI_MODE_TYPE_MASK != Configuration.UI_MODE_TYPE_TELEVISION
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false), content = {
         val inputMode = LocalInputModeManager.current
         val windowFocused = LocalWindowInfo.current.isWindowFocused
@@ -47,6 +54,28 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                 focus.requestFocus()
             }
         })
+        val power: @Composable () -> Unit = {
+            TvIconButton(
+                description = stringResource(if (draft.enabled) R.string.proxy_on else R.string.proxy_off),
+                icon = R.drawable.ic_power,
+                selected = draft.enabled,
+                onClick = {
+                    val updated = draft.copy(enabled = !draft.enabled)
+                    if (updated.valid()) {
+                        updateDraft(updated)
+                    } else {
+                        error = R.string.proxy_invalid
+                    }
+                },
+                modifier = Modifier.focusRequester(focus)
+            )
+        }
+        val hostField: @Composable (Modifier) -> Unit = { modifier ->
+            OutlinedTextField(value = draft.host, onValueChange = { updateDraft(draft.copy(host = it.trim())) }, label = { Text(stringResource(R.string.proxy_ip)) }, singleLine = true, modifier = modifier)
+        }
+        val portField: @Composable (Modifier) -> Unit = { modifier ->
+            OutlinedTextField(value = draft.port, onValueChange = { updateDraft(draft.copy(port = it)) }, label = { Text(stringResource(R.string.proxy_port)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = modifier)
+        }
         Column(
             modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).imePadding().padding(12.dp)
                 .width(560.dp).heightIn(max = 480.dp).background(DialogSurface, RoundedCornerShape(22.dp)).padding(16.dp),
@@ -55,24 +84,20 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                 Text(text = stringResource(R.string.proxy_title), color = Color.White)
                 Column(
                     modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
                     content = {
-                        TvIconButton(
-                            description = stringResource(if (draft.enabled) R.string.proxy_on else R.string.proxy_off),
-                            icon = R.drawable.ic_power,
-                            selected = draft.enabled,
-                            onClick = {
-                                val updated = draft.copy(enabled = !draft.enabled)
-                                if (updated.valid()) {
-                                    updateDraft(updated)
-                                } else {
-                                    error = R.string.proxy_invalid
-                                }
-                            },
-                            modifier = Modifier.focusRequester(focus)
-                        )
-                        OutlinedTextField(value = draft.host, onValueChange = { updateDraft(draft.copy(host = it.trim())) }, label = { Text(stringResource(R.string.proxy_ip)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = draft.port, onValueChange = { updateDraft(draft.copy(port = it)) }, label = { Text(stringResource(R.string.proxy_port)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
+                        if (compact) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically, content = {
+                                    power()
+                                    hostField(Modifier.weight(2f))
+                                    portField(Modifier.weight(1f))
+                                })
+                        } else {
+                            power()
+                            hostField(Modifier.fillMaxWidth())
+                            portField(Modifier.fillMaxWidth())
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
                             OutlinedTextField(value = draft.username, onValueChange = { updateDraft(draft.copy(username = it)) }, label = { Text(stringResource(R.string.proxy_username)) }, singleLine = true, modifier = Modifier.weight(1f))
                             OutlinedTextField(value = draft.password, onValueChange = { updateDraft(draft.copy(password = it)) }, label = { Text(stringResource(R.string.proxy_password)) }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true, modifier = Modifier.weight(1f))

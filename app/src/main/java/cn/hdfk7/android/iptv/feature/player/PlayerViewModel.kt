@@ -2,17 +2,23 @@ package cn.hdfk7.android.iptv.feature.player
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import cn.hdfk7.android.iptv.core.data.local.LineHistory
+import cn.hdfk7.android.iptv.core.data.local.GuideCache
+import cn.hdfk7.android.iptv.core.data.local.StandbyFrameCache
+import java.io.File
 import cn.hdfk7.android.iptv.core.data.network.parseXmltv
 import cn.hdfk7.android.iptv.core.model.GuideRef
 import cn.hdfk7.android.iptv.core.model.Programme
+import cn.hdfk7.android.iptv.core.model.ProgrammePreview
 import cn.hdfk7.android.iptv.core.model.RecentChannels
 import org.json.JSONArray
 import cn.hdfk7.android.iptv.core.model.programmePreview
+import cn.hdfk7.android.iptv.core.model.programmeDay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import android.os.SystemClock
@@ -112,8 +118,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var rankingSnapshot: Long? = null
     private var wantsPlayback = false
     private var previewing = false
-    var previewFrameRequest: Any? by mutableStateOf(null)
+    internal var previewFrameRequest: PreviewFrameRequest? by mutableStateOf(null)
         private set
+    private val standbyFrames = StandbyFrameCache(File(application.cacheDir, "standby-frames"))
     private var scanningPreview = false
     private val playbackAudioAttributes = AudioAttributes.Builder()
         .setUsage(C.USAGE_MEDIA)
@@ -124,6 +131,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var generation = 0
     private var refreshJob: Job? = null
     private var guideJob: Job? = null
+    private val guideCache = GuideCache(File(application.cacheDir, "programme-guides"))
     private var guideRefs: Set<GuideRef> = emptySet()
     private var guideData: Map<GuideRef, List<Programme>> = emptyMap()
     private var guideForeground = false
@@ -264,13 +272,35 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         guideJob = viewModelScope.launch(block = {
             val now = System.currentTimeMillis()
+            val sources = refs.groupBy(keySelector = GuideRef::address).entries.take(4)
+            val missing = refs - guideData.keys
+            if (missing.isNotEmpty()) {
+                val cached = withContext(context = Dispatchers.IO, block = {
+                    val result = mutableMapOf<GuideRef, List<Programme>>()
+                    for ((address, entries) in sources) {
+                        val requested = entries.filter(predicate = missing::contains)
+                        if (requested.isNotEmpty()) {
+                            val feed = guideCache.read(address, now)
+                            if (feed != null) {
+                                val parsed = runCatching(block = { parseXmltv(feed, requested, now) }).getOrNull()
+                                if (parsed != null) {
+                                    result.putAll(parsed)
+                                }
+                            }
+                        }
+                    }
+                    result
+                })
+                guideData = guideData + cached
+                publishGuide()
+            }
             val data = withContext(context = Dispatchers.IO, block = {
                 val result = mutableMapOf<GuideRef, List<Programme>>()
-                val sources = refs.groupBy(keySelector = GuideRef::address)
-                for ((address, entries) in sources.entries.take(4)) {
+                for ((address, entries) in sources) {
                     try {
                         val feed = app.downloader.downloadGuide(address)
                         result.putAll(parseXmltv(feed, entries, now))
+                        guideCache.write(address, feed)
                     } catch (exception: CancellationException) {
                         throw exception
                     } catch (exception: Exception) {
@@ -289,15 +319,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun publishGuide(): Unit {
         val now = System.currentTimeMillis()
-        val previews = state.value.channels.mapNotNull(transform = { channel ->
-            val candidates = channel.guideRefs.mapNotNull(transform = { ref ->
-                guideData[ref]?.let(block = { items -> programmePreview(items, now) })
+        val (dayStart, dayEnd) = programmeDay(now)
+        val previews = mutableMapOf<String, ProgrammePreview>()
+        val schedules = mutableMapOf<String, List<Programme>>()
+        for (channel in state.value.channels) {
+            val candidates = channel.guideRefs.mapNotNull(transform = guideData::get)
+                .map(transform = { items -> items to programmePreview(items, now) })
+            val preferred = candidates.firstOrNull(predicate = { entry -> entry.second.current != null })
+                ?: candidates.firstOrNull(predicate = { entry -> entry.second.next != null })
+            if (preferred != null) {
+                previews[channel.id] = preferred.second
+            }
+            val today = (listOfNotNull(preferred) + candidates).firstNotNullOfOrNull(transform = { entry ->
+                entry.first.filter(predicate = { item -> item.endsAt > dayStart && item.startsAt < dayEnd })
+                    .takeIf(predicate = List<Programme>::isNotEmpty)
             })
-            val preview = candidates.firstOrNull(predicate = { item -> item.current != null })
-                ?: candidates.firstOrNull(predicate = { item -> item.next != null })
-            preview?.let(block = { item -> channel.id to item })
-        }).toMap()
-        mutableState.value = state.value.copy(programmePreviews = previews)
+            if (today != null) {
+                schedules[channel.id] = today
+            }
+        }
+        mutableState.value = state.value.copy(programmePreviews = previews, programmeSchedules = schedules)
     }
 
     fun refresh() {
@@ -385,7 +426,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         lineAddress = null
         player?.stop()
         player?.clearMediaItems()
-        mutableState.value = state.value.copy(playback = PlaybackStatus.IDLE, previewFrameVisible = false,
+        mutableState.value = state.value.copy(playback = PlaybackStatus.IDLE, previewFrameVisible = false, cachedPreviewFrame = null,
             line = 0, lineCount = 0, lines = emptyList())
     }
 
@@ -482,8 +523,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 val now = SystemClock.elapsedRealtime()
                 firstFrameMs = (now - attemptStartedAt).coerceAtLeast(1L)
+                activeChannel?.let(block = { channel ->
+                    previewFrameRequest = PreviewFrameRequest(previewKey(channel), previewing)
+                })
                 if (previewing) {
-                    previewFrameRequest = Any()
                     return
                 }
                 recordRecent()
@@ -579,7 +622,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (playing) {
             previewing = false
         }
-        mutableState.value = state.value.copy(selectedId = channel.id, selectedName = channel.name, selectedSourceName = channel.sourceName)
+        mutableState.value = state.value.copy(selectedId = channel.id, selectedName = channel.name,
+            selectedSourceName = channel.sourceName, cachedPreviewFrame = null)
+        if (previewing) {
+            val key = previewKey(channel)
+            viewModelScope.launch(block = {
+                val cached = withContext(Dispatchers.IO, block = { standbyFrames.read(key) })
+                val current = activeChannel
+                if (cached != null && previewing && current != null && previewKey(current) == key &&
+                    !state.value.previewFrameVisible) {
+                    mutableState.value = state.value.copy(cachedPreviewFrame = cached)
+                }
+            })
+        }
         playLine()
         if (!previewing) {
             showInformation()
@@ -662,7 +717,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
             mutableState.value = state.value.copy(
                 playback = if (current.playbackState == Player.STATE_READY) PlaybackStatus.PAUSED else PlaybackStatus.LOADING,
-                previewFrameVisible = false
+                previewFrameVisible = false,
+                cachedPreviewFrame = null
             )
         }
         if (playing && player?.currentMediaItem == null) {
@@ -719,7 +775,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         watchLineHealth(current)
     }
 
-    internal fun skipBlackPreviewFrame(request: Any): Unit {
+    private fun previewKey(channel: Channel): String = "${catalogToken.orEmpty()}\n${channel.id}"
+
+    internal fun skipBlackPreviewFrame(request: PreviewFrameRequest): Unit {
         if (request !== previewFrameRequest || scanningPreview) {
             return
         }
@@ -730,12 +788,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         current.playWhenReady = true
     }
 
-    internal fun finishPreviewFrame(request: Any, visible: Boolean): Unit {
+    internal fun finishPreviewFrame(request: PreviewFrameRequest, frame: Bitmap?): Unit {
         if (request !== previewFrameRequest) {
             return
         }
         clearPreviewScan()
-        mutableState.value = state.value.copy(previewFrameVisible = visible)
+        if (request.standby && frame != null) {
+            mutableState.value = state.value.copy(previewFrameVisible = true, cachedPreviewFrame = null)
+        }
+        if (frame != null) {
+            viewModelScope.launch(context = Dispatchers.IO, block = { standbyFrames.write(request.key, frame) })
+        }
     }
 
     private fun clearPreviewScan(): Unit {

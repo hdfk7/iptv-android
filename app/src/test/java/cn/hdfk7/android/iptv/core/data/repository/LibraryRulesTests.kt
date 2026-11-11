@@ -6,6 +6,20 @@ import org.junit.jupiter.api.Test
 
 class LibraryRulesTests {
     @Test
+    fun savesAndClearsAnOptionalGuideWithoutChangingPlaylistIdentity(): Unit {
+        val initial = LibraryRules.defaults()
+        val source = initial.sources.first()
+        val changed = LibraryRules.save(initial, source.id, source.name, source.url,
+            guideAddress = " https://example.org/guide.xml.gz ")
+        assertEquals(source.copy(guideAddress = "https://example.org/guide.xml.gz"), changed.sources.first())
+        assertEquals(source, LibraryRules.save(changed, source.id, source.name, source.url,
+            guideAddress = "").sources.first())
+        val error = assertThrows(LibraryException::class.java, {
+            LibraryRules.save(initial, source.id, source.name, source.url, guideAddress = "file:///guide.xml")
+        })
+        assertEquals(LibraryError.GUIDE_ADDRESS, error.error)
+    }
+    @Test
     fun restoreDefaultsBringsBackStockSourcesAndKeepsFavorites() {
         val favorite = Channel("CCTV1", "TV", listOf("https://example.org/live"), "best-fan", "精选")
         val emptied = LibraryRules.defaults().let { library ->

@@ -1,10 +1,19 @@
 package cn.hdfk7.android.iptv.core.model
 
+import java.time.Instant
+import java.time.ZoneId
+
 data class GuideRef(val address: String, val channelId: String, val channelName: String = "")
 
 data class Programme(val title: String, val startsAt: Long, val endsAt: Long)
 
 data class ProgrammePreview(val current: String?, val next: String?)
+
+internal fun programmeDay(now: Long, zone: ZoneId = ZoneId.systemDefault()): Pair<Long, Long> {
+    val date = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    return date.atStartOfDay(zone).toInstant().toEpochMilli() to
+        date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+}
 
 internal fun programmePreview(programmes: List<Programme>, now: Long): ProgrammePreview {
     val current = programmes.lastOrNull(predicate = { item -> item.startsAt <= now && now < item.endsAt })

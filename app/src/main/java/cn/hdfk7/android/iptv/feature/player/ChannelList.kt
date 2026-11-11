@@ -75,7 +75,7 @@ class ChannelListFocus(val memory: ChannelFocusMemory) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null, cinema: Boolean = false, domestic: Boolean = false, groupKey: String = "", requestDrawerFocus: Boolean = false, groupControls: @Composable () -> Unit = {}) {
+fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modifier, compact: Boolean, television: Boolean, requestInitialFocus: Boolean, onInitialFocus: () -> Unit, selectedRowFocus: ChannelListFocus, videoFocus: FocusRequester, onConfirmSelect: (() -> Unit)? = null, onRight: (() -> Unit)? = null, onLeftToHeader: (() -> Unit)? = null, onTopBoundary: (() -> Unit)? = null, onBottomBoundary: (() -> Unit)? = null, cinema: Boolean = false, domestic: Boolean = false, groupKey: String = "", requestDrawerFocus: Boolean = false, headerAction: @Composable () -> Unit = {}, groupControls: @Composable () -> Unit = {}) {
     val favorites = state.activeSourceId == SourceLibrary.FAVORITES_ID
     val selectedIndex = remember(state.channels, state.selectedId, calculation = {
         state.channels.indexOfFirst(predicate = { channel -> channel.id == state.selectedId })
@@ -161,6 +161,7 @@ fun ChannelPanel(state: PlayerState, onSelect: (Channel) -> Unit, modifier: Modi
                 if (state.refreshing) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Accent)
                 }
+                headerAction()
             })
             if (state.refreshFailed || state.message != null) {
                 CatalogMessage(state = state)

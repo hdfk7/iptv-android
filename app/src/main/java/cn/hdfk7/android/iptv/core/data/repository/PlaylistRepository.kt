@@ -6,6 +6,7 @@ import cn.hdfk7.android.iptv.core.data.network.PlaylistDownloader
 import cn.hdfk7.android.iptv.core.model.CatalogState
 import cn.hdfk7.android.iptv.core.model.Channel
 import cn.hdfk7.android.iptv.core.model.ChannelAggregation
+import cn.hdfk7.android.iptv.core.model.GuideRef
 import cn.hdfk7.android.iptv.core.model.LibraryError
 import cn.hdfk7.android.iptv.core.model.LibraryException
 import cn.hdfk7.android.iptv.core.model.PlaylistSnapshot
@@ -72,12 +73,18 @@ class PlaylistRepository(
         mutate(transform = { current -> LibraryRules.activate(current, id) })
     }
 
-    suspend fun saveSource(id: String?, name: String, address: String) {
-        mutate(transform = { current -> LibraryRules.save(current, id, name, address) })
+    suspend fun saveSource(id: String?, name: String, address: String, guideAddress: String? = null) {
+        mutate(transform = { current -> LibraryRules.save(current, id, name, address, guideAddress = guideAddress) })
     }
 
     suspend fun deleteSource(id: String) {
-        mutate(transform = { current -> LibraryRules.delete(current, id) })
+        mutate(transform = { current ->
+            val address = current.sources.firstOrNull(predicate = { source -> source.id == id })?.guideAddress
+            val updated = LibraryRules.delete(current, id)
+            updated.copy(favorites = updated.favorites.map(transform = { channel ->
+                if (channel.sourceId == id) withGuideAddress(channel, address) else channel
+            }))
+        })
     }
 
     suspend fun restoreDefaults() {
@@ -85,7 +92,15 @@ class PlaylistRepository(
     }
 
     suspend fun toggleFavorite(channel: Channel) {
-        mutate(transform = { current -> LibraryRules.toggleFavorite(current, channel) })
+        mutate(transform = { current ->
+            val original = snapshots[channel.sourceId]?.channels?.firstOrNull(predicate = { entry -> entry.key == channel.key })
+            val contribution = if (original != null) {
+                channel.copy(guideRefs = original.guideRefs, guideIds = original.guideIds)
+            } else {
+                channel
+            }
+            LibraryRules.toggleFavorite(current, contribution)
+        })
     }
 
     private suspend fun mutate(transform: (SourceLibrary) -> SourceLibrary) {
@@ -233,9 +248,15 @@ class PlaylistRepository(
         val favoritesMode = library.activeSourceId == SourceLibrary.FAVORITES_ID
         val source = library.sources.firstOrNull(predicate = { entry -> entry.id == library.activeSourceId })
         val channels = if (favoritesMode) {
-            ChannelAggregation.merge(library.favorites, SourceLibrary.FAVORITES_ID)
+            val sources = library.sources.associateBy(keySelector = { entry -> entry.id })
+            val contributions = library.favorites.map(transform = { channel ->
+                withGuideAddress(channel, sources[channel.sourceId]?.guideAddress)
+            })
+            ChannelAggregation.merge(contributions, SourceLibrary.FAVORITES_ID)
         } else if (source != null) {
-            snapshots[source.id]?.channels.orEmpty().map(transform = { channel -> channel.copy(sourceId = source.id, sourceName = source.name) })
+            snapshots[source.id]?.channels.orEmpty().map(transform = { channel ->
+                withGuideAddress(channel.copy(sourceId = source.id, sourceName = source.name), source.guideAddress)
+            })
         } else {
             emptyList()
         }
@@ -254,5 +275,16 @@ class PlaylistRepository(
             refreshFailed = relevantIds.any(predicate = { id -> id in failedIds }),
             storageFailed = storageFailed
         )
+    }
+
+    private fun withGuideAddress(channel: Channel, address: String?): Channel {
+        if (address == null) {
+            return channel
+        }
+        val ids = (channel.guideIds + channel.guideRefs.map(transform = { ref -> ref.channelId }))
+            .filter(predicate = String::isNotBlank).distinct().ifEmpty(defaultValue = { listOf("") })
+        return channel.copy(guideRefs = ids.map(transform = { id ->
+            GuideRef(address, id, channel.name)
+        }))
     }
 }

@@ -62,6 +62,7 @@ fun SourceManagerDialog(viewModel: SourceManagerViewModel) {
                     contentAlignment = if (dockEditorAboveKeyboard) Alignment.TopCenter else Alignment.Center,
                     content = {
                         val compactEditor = state.draft != null && maxHeight < 200.dp
+                        val horizontalFields = !television && maxWidth >= 480.dp && maxHeight < 440.dp
                         val outerPadding = if (compactEditor) 6.dp else 12.dp
                         val innerPadding = if (compactEditor) 10.dp else 24.dp
                         Column(modifier = Modifier.padding(outerPadding).width(710.dp).heightIn(max = 460.dp)
@@ -69,7 +70,7 @@ fun SourceManagerDialog(viewModel: SourceManagerViewModel) {
                             .padding(innerPadding), verticalArrangement = Arrangement.spacedBy(16.dp), content = {
                             when {
                                 state.draft != null -> {
-                                    SourceEditor(state = state, viewModel = viewModel)
+                                    SourceEditor(state = state, viewModel = viewModel, compact = horizontalFields)
                                 }
                                 state.deleting != null -> {
                                     SourceDelete(state = state, viewModel = viewModel)
@@ -150,7 +151,7 @@ private fun SourceCard(name: String, detail: String, active: Boolean, busy: Bool
 }
 
 @Composable
-private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerViewModel) {
+private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerViewModel, compact: Boolean) {
     val inputMode = LocalInputModeManager.current
     val draft = state.draft ?: return
     val closeFocus = remember(calculation = { FocusRequester() })
@@ -172,11 +173,34 @@ private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerView
             }
         }
     })
-    Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp), content = {
+    val nameField: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedTextField(value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, showKeyboardOnFocus = false), enabled = !state.busy, modifier = modifier.then(fieldFocus))
+    }
+    val addressField: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedTextField(value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = ImeAction.Next, showKeyboardOnFocus = false), enabled = !state.busy, modifier = modifier.then(fieldFocus))
+    }
+    val guideField: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedTextField(value = draft.guideAddress, onValueChange = viewModel::editGuideAddress,
+            label = { Text(text = stringResource(R.string.source_guide_address)) }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false,
+                imeAction = ImeAction.Done, showKeyboardOnFocus = false),
+            enabled = !state.busy, modifier = modifier.then(fieldFocus))
+    }
+    Column(modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp), content = {
         DialogHeader(title = stringResource(if (draft.id == null) R.string.source_add else R.string.source_edit),
             onClose = viewModel::back, closeFocus = closeFocus)
-        OutlinedTextField(value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, showKeyboardOnFocus = false), enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(fieldFocus))
-        OutlinedTextField(value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = ImeAction.Done, showKeyboardOnFocus = false), enabled = !state.busy, modifier = Modifier.fillMaxWidth().then(fieldFocus))
+        if (compact) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
+                nameField(Modifier.weight(1f))
+                addressField(Modifier.weight(2f))
+                guideField(Modifier.weight(2f))
+            })
+        } else {
+            nameField(Modifier.fillMaxWidth())
+            addressField(Modifier.fillMaxWidth())
+            guideField(Modifier.fillMaxWidth())
+        }
         SourceError(error = state.error)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), content = {
             TvIconButton(description = stringResource(if (state.busy) R.string.saving else R.string.save), icon = R.drawable.ic_check, onClick = viewModel::save, selected = true, enabled = !state.busy)
