@@ -349,9 +349,7 @@ private fun CatalogMessage(state: PlayerState, hasChannels: Boolean): Unit {
         }
         if (state.refreshFailed) {
             Text(text = stringResource(if (hasChannels) R.string.cached else R.string.refresh_error), color = Gold, fontSize = 11.sp)
-        } else if (state.activeSourceId == SourceLibrary.FAVORITES_ID) {
-            Text(text = stringResource(R.string.source_aggregate), color = Muted, fontSize = 11.sp)
-        } else if (state.updatedAt != null) {
+        } else if (state.activeSourceId != SourceLibrary.FAVORITES_ID && state.updatedAt != null) {
             val timestamp = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(state.updatedAt))
             Text(text = stringResource(R.string.updated, timestamp), color = Muted, fontSize = 11.sp)
         }

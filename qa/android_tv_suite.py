@@ -621,7 +621,7 @@ class TvSuite:
             self.run("push", str(corrupt), "/data/local/tmp/iptv-qa-corrupt-library.json")
             self.run("shell", "run-as", PACKAGE, "cp", "/data/local/tmp/iptv-qa-corrupt-library.json", "files/library.json")
             self.launch()
-            message = "本地资料保存失败，请检查可用空间后重试"
+            message = "保存失败"
             self.wait(lambda root: self.has(root, message))
             assert self.run("shell", "run-as", PACKAGE, "cat", "files/library.json") == b"{invalid qa json"
             self.record("N06", "配置损坏保护", "存储异常", "受控配置 JSON 损坏时显示存储错误，未用默认配置覆盖原文件。")

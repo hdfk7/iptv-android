@@ -179,9 +179,6 @@ private fun CinemaMoreMenuContent(
             .verticalScroll(rememberScrollState()).padding(8.dp),
         content = {
             for (row in rows) {
-                if (row.first() == MoreAction.SETTINGS && state.fixedVolume) {
-                    Text(text = stringResource(R.string.fixed_volume), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
-                }
                 Row(modifier = Modifier.fillMaxWidth(), content = {
                     for (action in row) {
                         CinemaAction(

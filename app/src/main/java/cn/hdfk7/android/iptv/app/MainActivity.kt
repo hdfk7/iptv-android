@@ -11,20 +11,12 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.WindowManager
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import kotlinx.coroutines.delay
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import cn.hdfk7.android.iptv.core.ui.components.ExitHint
 import cn.hdfk7.android.iptv.core.ui.theme.IptvTheme
 import cn.hdfk7.android.iptv.feature.source.SourceManagerViewModel
 import cn.hdfk7.android.iptv.feature.player.PlayerScreen
@@ -36,7 +28,6 @@ class MainActivity : ComponentActivity() {
     private var television = false
     private var lastBackPressTime = 0L
     private var playerDialogOpen = false
-    private var exitHintTime by mutableLongStateOf(0L)
 
     private companion object {
         const val DOUBLE_BACK_INTERVAL_MS = 2000L
@@ -80,17 +71,12 @@ class MainActivity : ComponentActivity() {
                 insets.hide(WindowInsetsCompat.Type.systemBars())
             })
             IptvTheme(content = {
-                LaunchedEffect(key1 = exitHintTime, block = {
-                    if (exitHintTime != 0L) {
-                        delay(DOUBLE_BACK_INTERVAL_MS)
-                        exitHintTime = 0L
-                    }
-                })
-                Box(modifier = Modifier.fillMaxSize(), content = {
-                    PlayerScreen(viewModel = viewModel, sourceViewModel = sourceViewModel, television = television,
-                        onDialogStateChanged = { open -> playerDialogOpen = open })
-                    ExitHint(visible = exitHintTime != 0L)
-                })
+                PlayerScreen(
+                    viewModel = viewModel,
+                    sourceViewModel = sourceViewModel,
+                    television = television,
+                    onDialogStateChanged = { open -> playerDialogOpen = open }
+                )
             })
         })
     }
@@ -123,7 +109,6 @@ class MainActivity : ComponentActivity() {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                     if (viewModel.state.value.infoVisible) {
                         lastBackPressTime = 0L
-                        exitHintTime = 0L
                         onBackPressedDispatcher.onBackPressed()
                         return true
                     }
@@ -132,7 +117,6 @@ class MainActivity : ComponentActivity() {
                         finish()
                     } else {
                         lastBackPressTime = now
-                        exitHintTime = now
                     }
                 }
                 return true

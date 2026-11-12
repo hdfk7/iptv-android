@@ -382,8 +382,10 @@ private fun CinemaControls(
 ): Unit {
     val channelName: @Composable (Modifier) -> Unit = { nameModifier ->
         Column(modifier = nameModifier, verticalArrangement = Arrangement.spacedBy(2.dp), content = {
-            Text(text = displayName ?: stringResource(R.string.choose_channel), color = Accent,
-                fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (displayName != null) {
+                Text(text = displayName, color = Accent, fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             if (!state.selectedSourceName.isNullOrBlank()) {
                 Text(text = state.selectedSourceName, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -421,7 +423,9 @@ private fun CinemaControls(
     }
     if (portrait) {
         Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp), content = {
-            channelName(Modifier)
+            if (displayName != null) {
+                channelName(Modifier)
+            }
             BoxWithConstraints(modifier = Modifier.fillMaxWidth().then(actionBackground), content = {
                 val actionCount = 2 + (if (state.channels.isNotEmpty()) 1 else 0) + (if (state.selectedId != null) 1 else 0)
                 val availableColumns = (maxWidth / 48.dp).toInt().coerceAtLeast(1)

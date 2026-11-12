@@ -25,8 +25,8 @@ object LibraryRules {
     }
 
     fun restoreDefaults(library: SourceLibrary): SourceLibrary {
-        val sources = defaults().sources
-        return library.copy(sources = sources, activeSourceId = sources.first().id)
+        val defaultLibrary = defaults()
+        return library.copy(sources = defaultLibrary.sources, activeSourceId = defaultLibrary.activeSourceId)
     }
 
     fun normalizeAddress(address: String): String = normalizeAddress(address, allowRepositoryDefaults = true)

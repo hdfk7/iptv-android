@@ -8,7 +8,7 @@ Android Studio 打开本目录。使用支持 AGP 9.4.1 的 Android Studio、Gra
 
 在 SDK Manager 的 SDK Tools 中安装 NDK (Side by side) `28.2.13676358`，项目固定使用此版本剥离依赖库的原生调试符号。
 
-当前待发布版本为 `1.3.4`（`versionCode=29`），更新说明位于 `app/release-notes/1.3.4.txt`。
+当前版本为 `1.3.5`（`versionCode=30`），更新说明位于 `app/release-notes/1.3.5.txt`。
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
@@ -98,7 +98,7 @@ STREAM_PROBE_TIMEOUT_MS=8000
 
 手机与电视共用全屏播放器、配色和半透明控件。手机点击画面唤出底栏，竖屏频道从底部展开，横屏从左侧展开。「更多」提供触控切台入口。打开的频道面板保持可见，选择频道后收起。
 
-列表页底部左侧为上一节目、播放/暂停、下一节目、重试；右侧为线路状态、音量减/加。固定音量设备提示使用电视/功放遥控器。离开前台释放播放器，无后台媒体服务或通知权限。
+列表页底部左侧为上一节目、播放/暂停、下一节目、重试；右侧为线路状态、音量减/加。固定音量设备隐藏应用内音量按钮。离开前台释放播放器，无后台媒体服务或通知权限。
 
 ## 自动更新和缓存
 

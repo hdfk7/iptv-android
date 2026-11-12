@@ -25,15 +25,17 @@ Use concise Conventional Commit subjects with a Chinese summary (`feat:完善节
 
 Refresh on foreground entry and manual action only. Do not schedule periodic refresh. Do not add compatibility paths solely to migrate data or jobs from earlier app versions. Proxy settings apply to playlist and Media3 networking; never send proxy credentials as origin Authorization headers or log secrets.
 
-## Panel remote navigation
+## 变更范围与行为
 
-By the user's explicit instruction, all TV panels must follow the single-focus approach proven in the More menu and programme guide. This applies to the channel panel, settings, source management, add/edit forms, delete confirmations, proxy settings and update dialogs, including future panels.
+- 精简代码时，保留相同输入和状态下的结果、操作顺序、按键响应、焦点、滚动、返回行为及数据。只合并等价的重复实现，或移除经核实无调用且无行为影响的代码和资源。
+- 修复逻辑时，先确认具体的不合理行为及触发条件，再做最小改动并复测。现有实现方式不同于示例或其他面板，本身不构成缺陷。
+- 文案或界面呈现调整只涉及对应的可见内容，保留操作、状态流转和数据处理。文案使用功能名称、动作按钮、必要状态及错误原因。删除教程式提示、按键指示、重复说明和纯引导浮层。版本说明记录实际变更。
 
-- The panel owns one native focus target and handles remote direction and confirm keys centrally. Buttons, tabs and list rows are logical selections; do not give each item its own native focus requester or retry loop.
-- Keep selection and scrolling state explicit. Draw the selected item's focus highlight from the panel, using the shared focus theme, so the visible highlight follows remote input immediately.
-- Text inputs may receive native focus while editing. Provide an explicit transition into editing and back to panel navigation, preserving text entry and IME behavior.
-- Preserve established behavior: from any channel Tab, DOWN selects the currently playing channel if present in that Tab, otherwise its first channel. Browsing does not change playback until confirmation. Returning from child dialogs restores the originating selection.
-- Reuse shared panel navigation behavior; do not reintroduce per-item focus patches as an alternative implementation.
+## TV 遥控器与焦点
+
+- 保留现有面板的焦点实现。频道列表、节目单、更多、设置、代理、源管理和更新弹窗均以已验证的实际操作为准。没有可复现问题或明确改造要求时，不迁移焦点结构。
+- 有焦点问题时，记录设备、按键序列、期望行为和实际行为。修复后验证移动、高亮、确认、返回恢复、列表滚动及输入法切换。
+- 从任意频道分组按下键，有正在播放的频道时定位到该频道，否则定位到首个频道。浏览期间保持播放，确认后才换台。退出子弹窗时恢复原选择。
 
 ## 全量测试
 
