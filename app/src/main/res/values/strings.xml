@@ -50,6 +50,7 @@
     <string name="proxy_invalid">IP 地址、端口或认证信息无效</string>
     <string name="proxy_read_error">无法读取代理设置</string>
     <string name="app_update_download_too_large">更新包超过 256 MiB 下载限制</string>
+    <string name="press_back_again">再按一次返回键退出应用</string>
     <string name="app_update_title">检查应用更新</string>
     <string name="app_update_notes">%1$s 版本说明</string>
     <string name="app_update_checking">正在检查更新…</string>
