@@ -42,7 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cn.hdfk7.android.iptv.core.ui.theme.*
@@ -56,8 +56,7 @@ import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButtonSize
 import cn.hdfk7.android.iptv.core.ui.components.tvPanelNavigation
-import cn.hdfk7.android.iptv.core.ui.components.tvFocusBackground
-import cn.hdfk7.android.iptv.core.ui.components.requestWhenReady
+import cn.hdfk7.android.iptv.core.ui.components.tvTextFieldColors
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 
@@ -275,7 +274,7 @@ private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerView
     LaunchedEffect(editing, block = {
         if (editing != 0) {
             withFrameNanos(onFrame = { _ -> })
-            if (fieldRequester.requestWhenReady()) {
+            if (fieldRequester.requestFocus()) {
                 keyboard?.show()
             } else {
                 finishEditing()
@@ -325,18 +324,17 @@ private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerView
         })
         val field = if (editing == index) Modifier.focusRequester(fieldRequester) else Modifier
         return field.bringIntoViewRequester(bringIntoView).focusProperties(scope = { canFocus = editing == index })
-            .tvFocusBackground(focused = { focused == index && editing == 0 }, selected = { false })
     }
     val keyboardActions = if (television) KeyboardActions(onDone = { finishEditing() }) else KeyboardActions.Default
     val nextAction = if (television) ImeAction.Done else ImeAction.Next
     val nameField: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedTextField(value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = nextAction, showKeyboardOnFocus = false), keyboardActions = keyboardActions, readOnly = television && editing != 1, enabled = !state.busy, modifier = modifier.then(fieldModifier(1)))
+        OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == 0 && focused == 1), value = draft.name, onValueChange = viewModel::editName, label = { Text(text = stringResource(R.string.source_name)) }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = nextAction, showKeyboardOnFocus = false), keyboardActions = keyboardActions, readOnly = television && editing != 1, enabled = !state.busy, modifier = modifier.then(fieldModifier(1)))
     }
     val addressField: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedTextField(value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = nextAction, showKeyboardOnFocus = false), keyboardActions = keyboardActions, readOnly = television && editing != 2, enabled = !state.busy, modifier = modifier.then(fieldModifier(2)))
+        OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == 0 && focused == 2), value = draft.address, onValueChange = viewModel::editAddress, label = { Text(text = stringResource(R.string.source_address)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = nextAction, showKeyboardOnFocus = false), keyboardActions = keyboardActions, readOnly = television && editing != 2, enabled = !state.busy, modifier = modifier.then(fieldModifier(2)))
     }
     val guideField: @Composable (Modifier) -> Unit = { modifier ->
-        OutlinedTextField(value = draft.guideAddress, onValueChange = viewModel::editGuideAddress,
+        OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == 0 && focused == 3), value = draft.guideAddress, onValueChange = viewModel::editGuideAddress,
             label = { Text(text = stringResource(R.string.source_guide_address)) }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false,
                 imeAction = ImeAction.Done, showKeyboardOnFocus = false),

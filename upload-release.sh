@@ -52,6 +52,9 @@ fi
 echo "==> 版本: versionCode=$VERSION_CODE versionName=$VERSION_NAME"
 echo "==> 目标: $SERVER:$REMOTE_DIR"
 
+echo "==> 创建上传目录"
+ssh -o BatchMode=yes "$SERVER" "mkdir -p -- '$REMOTE_DIR'"
+
 STAGED_APK=".$APK_NAME.upload"
 STAGED_MANIFEST=".latest-$APK_NAME.upload"
 scp -o BatchMode=yes "$APK" "$SERVER:$REMOTE_DIR/$STAGED_APK"

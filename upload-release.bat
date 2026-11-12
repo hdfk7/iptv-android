@@ -76,6 +76,13 @@ if /i not "%APK_URL%"=="%APK_NAME%" (
 echo -- version: versionCode=%VERSION_CODE% versionName=%VERSION_NAME%
 echo -- target : %TARGET%:%REMOTE_DIR%
 
+echo -- create upload directory
+ssh -o BatchMode=yes "%TARGET%" "mkdir -p -- '%REMOTE_DIR%'"
+if errorlevel 1 (
+    echo [error] could not create upload directory
+    exit /b 1
+)
+
 set "STAGED_APK=.%APK_NAME%.upload"
 set "STAGED_MANIFEST=.latest-%APK_NAME%.upload"
 scp -o BatchMode=yes "%APK%" "%TARGET%:%REMOTE_DIR%/%STAGED_APK%"

@@ -12,14 +12,10 @@ object LibraryRules {
     private const val DOMESTIC_SOURCE_ID = "best-fan"
     const val DEFAULT_URL = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
     internal const val DOMESTIC_GUIDE_URL = "http://epg.51zmt.top:8000/e.xml"
-    const val MYIPTV_URL = "https://raw.githubusercontent.com/suxuang/myIPTV/main/ipv4.m3u"
-    const val IPTV_ORG_URL = "https://iptv-org.github.io/iptv/index.m3u"
 
     fun defaults(): SourceLibrary {
         val sources = listOf(
-            PlaylistSource(DOMESTIC_SOURCE_ID, "国内精选", DEFAULT_URL),
-            PlaylistSource("myiptv", "综合频道", MYIPTV_URL),
-            PlaylistSource("iptv-org", "全球频道", IPTV_ORG_URL)
+            PlaylistSource(DOMESTIC_SOURCE_ID, "国内精选", DEFAULT_URL)
         )
         return SourceLibrary(sources, sources.first().id)
     }
@@ -47,12 +43,6 @@ object LibraryRules {
             val path = uri.path.trim('/').removeSuffix(".git")
             if (allowRepositoryDefaults && path.equals("best-fan/iptv-sources", ignoreCase = true)) {
                 return DEFAULT_URL
-            }
-            if (allowRepositoryDefaults && path.equals("suxuang/myIPTV", ignoreCase = true)) {
-                return MYIPTV_URL
-            }
-            if (allowRepositoryDefaults && path.equals("iptv-org/iptv", ignoreCase = true)) {
-                return IPTV_ORG_URL
             }
             val parts = uri.rawPath.trim('/').split('/')
             if (parts.size >= 5 && parts[2] == "blob") {

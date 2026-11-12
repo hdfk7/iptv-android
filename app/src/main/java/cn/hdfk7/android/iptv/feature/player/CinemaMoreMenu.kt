@@ -22,7 +22,6 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
@@ -30,10 +29,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import cn.hdfk7.android.iptv.R
-import cn.hdfk7.android.iptv.core.ui.components.requestWhenReady
 import cn.hdfk7.android.iptv.core.ui.theme.CinemaMenuSurface
 import cn.hdfk7.android.iptv.core.ui.theme.FocusBorder
 import cn.hdfk7.android.iptv.core.ui.theme.FocusCornerRadius
@@ -59,14 +57,11 @@ internal fun CinemaMoreMenu(
             content = {
                 val windowFocused = LocalWindowInfo.current.isWindowFocused
                 val inputMode = LocalInputModeManager.current
-                val focusManager = LocalFocusManager.current
                 LaunchedEffect(windowFocused, restoreSettings, block = {
                     if (windowFocused) {
                         inputMode.requestInputMode(InputMode.Keyboard)
                         withFrameNanos(onFrame = { _ -> })
-                        focusManager.clearFocus(force = true)
-                        withFrameNanos(onFrame = { _ -> })
-                        menuFocus.requestWhenReady()
+                        menuFocus.requestFocus()
                     }
                 })
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd, content = {

@@ -193,8 +193,6 @@ class PlaylistRepositoryTests {
 
     @Test
     fun restoresSavedSourceOnlyWhenEnabledAndAvailable(): Unit = runBlocking(block = {
-        val initial = LibraryRules.defaults()
-        val second = initial.sources[1]
         val saved = MemoryLibrary(initial.copy(activeSourceId = second.id))
         val restored = PlaylistRepository(saved, { _ -> MemoryPlaylist() }, { _ -> error("Unexpected download") },
             { 1000L }, restoreActiveSource = { true })

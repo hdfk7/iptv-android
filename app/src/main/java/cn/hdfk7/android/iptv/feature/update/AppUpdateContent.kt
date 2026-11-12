@@ -22,7 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
@@ -148,15 +148,11 @@ internal fun AppUpdateContent(
 @Composable
 private fun UpdateDialogContainer(onClose: () -> Unit, content: @Composable () -> Unit): Unit {
     val television = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
-    Box(
-        modifier = if (television) Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)) else Modifier,
-        contentAlignment = Alignment.Center,
-        content = {
-            if (television) {
-                Box(modifier = Modifier.width(460.dp), content = { content() })
-            } else {
-                Dialog(onDismissRequest = onClose, content = content)
-            }
-        }
-    )
+    Dialog(onDismissRequest = onClose, content = {
+        Box(
+            modifier = if (television) Modifier.width(460.dp) else Modifier,
+            contentAlignment = Alignment.Center,
+            content = { content() }
+        )
+    })
 }

@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -452,12 +451,6 @@ private fun CinemaPlaybackAction(viewModel: PlayerViewModel, initialPlayback: Pl
     })
     val playback by playbackFlow.collectAsStateWithLifecycle(initialValue = initialPlayback)
     val playing = playback == PlaybackStatus.PLAYING
-    val view = LocalView.current
-    // The SurfaceView can keep rendering while the TV retains the old controls layer.
-    LaunchedEffect(playback, block = {
-        withFrameNanos(onFrame = { _ -> })
-        view.postInvalidateOnAnimation()
-    })
     CinemaAction(
         label = stringResource(if (playing) R.string.pause else R.string.play),
         icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play,

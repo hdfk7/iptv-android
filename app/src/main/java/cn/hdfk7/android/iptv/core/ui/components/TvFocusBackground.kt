@@ -18,7 +18,6 @@ internal fun Modifier.tvFocusBackground(
     selected: () -> Boolean,
     borderColor: Color = FocusBorder
 ): Modifier {
-    // Read focus during drawing so lazy rows update without waiting for recomposition.
     return drawBehind(onDraw = {
         val hasFocus = focused()
         val fill = when {

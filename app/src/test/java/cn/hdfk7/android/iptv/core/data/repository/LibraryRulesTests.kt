@@ -6,6 +6,13 @@ import org.junit.jupiter.api.Test
 
 class LibraryRulesTests {
     @Test
+    fun newLibraryContainsOnlyDomesticSource(): Unit {
+        val library = LibraryRules.defaults()
+        assertEquals(listOf(PlaylistSource("best-fan", "国内精选", LibraryRules.DEFAULT_URL)), library.sources)
+        assertEquals("best-fan", library.activeSourceId)
+    }
+
+    @Test
     fun savesAndClearsAnOptionalGuideWithoutChangingPlaylistIdentity(): Unit {
         val initial = LibraryRules.defaults()
         val source = initial.sources.first()
@@ -26,16 +33,14 @@ class LibraryRulesTests {
             LibraryRules.toggleFavorite(library, favorite).copy(sources = emptyList(), activeSourceId = SourceLibrary.FAVORITES_ID)
         }
         val restored = LibraryRules.restoreDefaults(emptied)
-        assertEquals(listOf("国内精选", "综合频道", "全球频道"), restored.sources.map(transform = { source -> source.name }))
+        assertEquals(listOf("国内精选"), restored.sources.map(transform = { source -> source.name }))
         assertEquals("best-fan", restored.activeSourceId)
         assertEquals(listOf(favorite), restored.favorites)
     }
 
     @Test
     fun knownRepositoriesAndGithubFileLinksResolveToRawPlaylists() {
-        assertEquals(LibraryRules.MYIPTV_URL, LibraryRules.normalizeAddress("https://github.com/suxuang/myIPTV/"))
         assertEquals(LibraryRules.DEFAULT_URL, LibraryRules.normalizeAddress("https://github.com/best-fan/iptv-sources.git"))
-        assertEquals(LibraryRules.IPTV_ORG_URL, LibraryRules.normalizeAddress("https://github.com/iptv-org/iptv"))
         assertEquals("https://example.org/playlist/", LibraryRules.normalizeAddress("https://example.org/playlist/"))
         assertEquals("https://raw.githubusercontent.com/owner/repo/main/tv.m3u", LibraryRules.normalizeAddress("https://github.com/owner/repo/blob/main/tv.m3u"))
         for (url in listOf("file:///tmp/test", "ftp://example.org/tv", "https://user:pass@example.org/tv", "https://github.com/unknown/repo", "not a url")) {
@@ -60,22 +65,20 @@ class LibraryRulesTests {
     @Test
     fun duplicateInvalidAndMissingEditsAreRejected() {
         val initial = LibraryRules.defaults()
-        assertEquals(LibraryError.DUPLICATE, assertThrows(LibraryException::class.java, { LibraryRules.save(initial, null, "Duplicate", "https://github.com/suxuang/myIPTV") }).error)
+        assertEquals(LibraryError.DUPLICATE, assertThrows(LibraryException::class.java, { LibraryRules.save(initial, null, "Duplicate", "https://github.com/best-fan/iptv-sources") }).error)
         assertEquals(LibraryError.NAME, assertThrows(LibraryException::class.java, { LibraryRules.save(initial, null, " ", "https://example.org/a") }).error)
         assertEquals(LibraryError.MISSING, assertThrows(LibraryException::class.java, { LibraryRules.save(initial, "missing", "Test", "https://example.org/a") }).error)
     }
 
     @Test
     fun deletingActiveSourceSelectsOneRemainingSourceAndKeepsSavedFavorites() {
-        var library = LibraryRules.defaults()
+        var library = LibraryRules.save(LibraryRules.defaults(), null, "Custom", "https://example.org/custom.m3u", "custom")
         val favorite = Channel("CCTV1", "TV", listOf("https://example.org/live"), "best-fan", "First")
         library = LibraryRules.toggleFavorite(library, favorite)
         library = LibraryRules.delete(library, "best-fan")
-        assertEquals("myiptv", library.activeSourceId)
+        assertEquals("custom", library.activeSourceId)
         assertEquals(listOf(favorite), library.favorites)
-        library = LibraryRules.delete(library, "myiptv")
-        assertEquals("iptv-org", library.activeSourceId)
-        library = LibraryRules.delete(library, "iptv-org")
+        library = LibraryRules.delete(library, "custom")
         assertEquals(SourceLibrary.FAVORITES_ID, library.activeSourceId)
         assertTrue(library.sources.isEmpty())
         assertEquals(1, library.favorites.size)
@@ -85,7 +88,8 @@ class LibraryRulesTests {
     fun sameProgramFromDifferentSourcesContributesDistinctAddressesToOneFavoriteProgram() {
         val first = Channel("CCTV-1", "A", listOf("https://example.org/a", "https://example.org/shared"), "best-fan", "First")
         val second = Channel("cctv1综合", "B", listOf("https://example.org/b", "https://example.org/shared"), "myiptv", "Second")
-        var library = LibraryRules.toggleFavorite(LibraryRules.defaults(), first)
+        val initial = LibraryRules.save(LibraryRules.defaults(), null, second.sourceName, "https://example.org/second.m3u", second.sourceId)
+        var library = LibraryRules.toggleFavorite(initial, first)
         library = LibraryRules.toggleFavorite(library, second)
         assertEquals(2, library.favorites.size)
         val aggregate = ChannelAggregation.merge(library.favorites, SourceLibrary.FAVORITES_ID).single()

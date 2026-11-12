@@ -20,9 +20,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,11 +38,6 @@ internal val TvIconButtonSize = 46.dp
 fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, enabled: Boolean = true, shape: Shape = RoundedCornerShape(FocusCornerRadius), focusScale: Float = 1f, containerColor: Color = Panel, focusFill: Color = FocusFill, focusInk: Color = FocusInk, focusBorderWidth: Dp = FocusStroke, contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 6.dp), focusHighlight: Boolean? = null, showUnfocusedBorder: Boolean = true, fitContentHeight: Boolean = false, content: @Composable RowScope.() -> Unit) {
     var hasFocus by remember(calculation = { mutableStateOf(false) })
     val focused = focusHighlight ?: hasFocus
-    val view = LocalView.current
-    LaunchedEffect(focused, block = {
-        withFrameNanos(onFrame = { _ -> })
-        view.postInvalidateOnAnimation()
-    })
     val scale by animateFloatAsState(targetValue = if (focused && enabled) focusScale else 1f, animationSpec = tween(durationMillis = 140), label = "buttonFocusScale")
     val container = when {
         focused -> {

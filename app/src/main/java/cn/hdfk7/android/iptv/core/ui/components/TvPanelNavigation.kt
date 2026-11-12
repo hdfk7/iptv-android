@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -32,7 +33,8 @@ internal fun tvPanelNavigation(
     LaunchedEffect(enabled, windowFocused, block = {
         if (enabled && windowFocused) {
             inputMode.requestInputMode(InputMode.Keyboard)
-            focus.requestWhenReady()
+            withFrameNanos(onFrame = { _ -> })
+            focus.requestFocus()
         }
     })
     if (!enabled) {

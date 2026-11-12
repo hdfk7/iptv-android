@@ -45,10 +45,9 @@ import cn.hdfk7.android.iptv.core.ui.theme.*
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 private object NoFocusScrollSpec : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
@@ -110,16 +109,12 @@ internal fun ChannelPanel(
             val index = channels.indexOf(target)
             if (index >= 0) {
                 listState.revealItem(index = index)
-                withTimeoutOrNull(1000, block = {
-                    while (isActive) {
-                        snapshotFlow(block = { selectedRowFocus.requesters[target.id] }).first(predicate = { requester -> requester != null })
-                        withFrameNanos(onFrame = { })
-                        if (runCatching(block = { selectedRowFocus.requesters[target.id]?.requestFocus() == true }).getOrDefault(false)) {
-                            focusedChannelId = target.id
-                            break
-                        }
-                    }
-                })
+                val requester = snapshotFlow(block = { selectedRowFocus.requesters[target.id] })
+                    .filterNotNull().first()
+                withFrameNanos(onFrame = { _ -> })
+                if (requester.requestFocus()) {
+                    focusedChannelId = target.id
+                }
             }
         }
     }

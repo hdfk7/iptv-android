@@ -6,6 +6,10 @@
 
 Android Studio 打开本目录。使用支持 AGP 9.4.1 的 Android Studio、Gradle 9.8、JDK 25 和 SDK Platform 37。SDK 路径放在忽略的 local.properties。AGP 内置 Kotlin。
 
+在 SDK Manager 的 SDK Tools 中安装 NDK (Side by side) `28.2.13676358`，项目固定使用此版本剥离依赖库的原生调试符号。
+
+当前待发布版本为 `1.3.4`（`versionCode=29`），更新说明位于 `app/release-notes/1.3.4.txt`。
+
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
 ```
@@ -32,11 +36,33 @@ APP_DISPLAY_NAME 控制启动器名称和 APK 文件名；APP_DEBUG_SWITCH 生�
 
 Git 提交消息使用 `type:中文说明`，每次聚焦一个逻辑变更；PR 说明模块、行为和验证。忽略构建输出、IDE 缓存和 local.properties。项目已初始化 Git，远程分支为 origin/master。
 
+### 手动打包与发布
+
+只构建正式签名 APK 时，在 macOS/Linux 执行 `./gradlew :app:testDebugUnitTest :app:assembleRelease`，Windows 执行 `.\gradlew.bat :app:testDebugUnitTest :app:assembleRelease`。
+
+构建并上传使用仓库发布脚本，默认先 clean 再构建正式包：
+
+```bash
+# macOS / Linux
+bash ./upload-release.sh
+```
+
+```powershell
+# Windows
+.\upload-release.bat
+```
+
+两个脚本都会先在服务器创建上传目录，创建失败立即停止；随后上传 APK 和同次构建的更新清单，上传完成后启用新文件，并清理目录中的其他版本 APK。
+
+默认发布到 `root@bastion:/usr/share/nginx/default/static/iptv`，公开地址为 `https://www.hdfk7.cn/static/iptv`。可通过环境变量 `IPTV_DEPLOY_TARGET`、`IPTV_DEPLOY_DIR` 和 `IPTV_PUBLIC_BASE` 分别配置 SSH 目标、服务器目录和公开地址。服务器目录需对应站点实际对外提供静态文件的位置。
+
+发布后检查公开的 `latest.json`：版本应为本次构建版本，`apkUrl` 应与实际 APK 文件名一致。下载公开 APK，核对 SHA-256 与本地正式包一致；若清单返回 404，检查服务器文件和静态目录映射。发布脚本不会创建或推送 Git 标签。
+
 ## 源管理
 
 顶部当前源或源管理按钮打开源面板，支持增加、修改名称/地址、删除和启用。始终只启用一个源，普通源不会混入其他源节目。新增不自动切源；删除当前源后使用剩余首个源，没有其他源时进入收藏源。切源停止原源播放，列表回到顶部。
 
-支持 HTTP(S) 扩展 M3U 频道列表、GitHub blob 文件链接，以及三个内置仓库的主页地址。默认源为“国内精选”“综合频道”“全球频道”。重复地址、空名称和无效地址会显示错误。M3U8 可以是频道列表，也可以是用于播放的 HLS 清单，源管理只接受前者。
+支持 HTTP(S) 扩展 M3U 频道列表、GitHub blob 文件链接，以及内置仓库的主页地址。默认源仅为“国内精选”。重复地址、空名称和无效地址会显示错误。M3U8 可以是频道列表，也可以是用于播放的 HLS 清单，源管理只接受前者。
 
 内置「国内精选」提供频道分组和央视频道名称。电视在频道侧栏用左右键切分组、上下键浏览，手机可点分组标签。央视分组按台号排序，收藏和切台沿用原有频道标识。订阅刷新时会参考上游 `response-time` 排列尚无本机播放记录的线路，实际播放质量仍优先于上游测速。
 
@@ -84,16 +110,15 @@ STREAM_PROBE_TIMEOUT_MS=8000
 
 ## EPG 与台标
 
-M3U 文件头的 `x-tvg-url` 或 `url-tvg` 指向 XMLTV 节目表，优先通过 `tvg-id` 匹配频道，找不到 ID 时使用唯一的标准化频道名。源管理可以填写可选的 XMLTV 地址，以指定该源使用的节目表。频道侧栏显示正在播和接下来的节目，「节目单」显示当前频道在设备时区内的当天排期。内置「国内精选」在上游未声明节目表时使用与「综合频道」相同的 XMLTV 节目表。跨源收藏保留各贡献的节目表地址和频道 ID。兼容 gzip 节目表和 HTTP(S) 重定向，每个列表最多读取四个节目表，每个解压后上限 24 MiB。节目表在进入前台、切换有效节目表或手动刷新时获取，启动时可先使用 24 小时内的本地缓存。台标元数据暂未用于界面。
+M3U 文件头的 `x-tvg-url` 或 `url-tvg` 指向 XMLTV 节目表，优先通过 `tvg-id` 匹配频道，找不到 ID 时使用唯一的标准化频道名。源管理可以填写可选的 XMLTV 地址，以指定该源使用的节目表。频道侧栏显示正在播和接下来的节目，「节目单」显示当前频道在设备时区内的当天排期。内置「国内精选」在上游未声明节目表时使用预设的 XMLTV 节目表。跨源收藏保留各贡献的节目表地址和频道 ID。兼容 gzip 节目表和 HTTP(S) 重定向，每个列表最多读取四个节目表，每个解压后上限 24 MiB。节目表在进入前台、切换有效节目表或手动刷新时获取，启动时可先使用 24 小时内的本地缓存。台标元数据暂未用于界面。
 
 ## 源仓库检查（2026-11-05）
 
 | 仓库 | 默认列表 | 检查结果 |
 | --- | --- | --- |
 | [best-fan/iptv-sources](https://github.com/best-fan/iptv-sources) | [cn_all.m3u8](https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8) | 根目录 8 个 M3U8，近期每日自动提交；README 声明 MIT，未发现独立 LICENSE |
-| [suxuang/myIPTV](https://github.com/suxuang/myIPTV) | [ipv4.m3u](https://raw.githubusercontent.com/suxuang/myIPTV/main/ipv4.m3u) | 包含 IPv4、IPv6、移动/APTV 列表和图片/播放器资源；人工不定期更新，未发现独立 LICENSE |
 
-均通过 Git clone 检查，默认分支 main。myIPTV 文件头含 x-tvg-url，已适配；部分 IPv6/运营商专用线路依赖相应网络，默认 IPv4。未来更新频率不保证。
+已通过 Git clone 检查，默认分支 main。部分 IPv6/运营商专用线路依赖相应网络。未来更新频率不保证。
 
 应用仅打包入口，不嵌入播放列表或流媒体。观看权利和可用性取决于源提供方，仓库许可不代表节目授权。请遵守来源条款与适用法律，仅在获得必要授权时使用。不绕过访问控制，不保证所有节目可播。
 
@@ -147,7 +172,7 @@ JUnit 5 覆盖解析、线路顺序、源管理、跨源收藏、离线缓存、
 手机轻点播放画面，电视按确认键或 INFO 唤出底栏，从「更多 → 设置 → 检查应用更新」进入更新界面。「更多」中的「刷新」用于更新节目列表。应用更新检查通过 HTTPS 读取以下格式的清单。
 
 ```json
-{"versionCode": 13, "versionName": "1.2.9", "apkUrl": "IPTV-release-v1.2.9-20261106150000.apk"}
+{"versionCode": 29, "versionName": "1.3.4", "apkUrl": "IPTV-release-v1.3.4-20261112230000.apk", "releaseNotes": "修复电视首次方向键高亮问题，统一全部界面绘制。"}
 ```
 
 运行 `./gradlew :app:assembleRelease` 会自动从打包结果生成 `app/build/outputs/update/release/latest.json`。先上传同次构建的 Release APK，再上传 JSON 到同一个 HTTPS 目录。生成的 `apkUrl` 是实际 APK 文件名，应用以接口地址为基准解析，也接受完整 HTTPS 下载地址。Debug 构建有独立的 `outputs/update/debug/latest.json`。

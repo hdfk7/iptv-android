@@ -28,13 +28,14 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.app.IptvApplication
 import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
+import cn.hdfk7.android.iptv.core.ui.components.TvUiSurface
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 import cn.hdfk7.android.iptv.core.ui.components.tvPanelNavigation
 import cn.hdfk7.android.iptv.core.ui.theme.*
@@ -68,19 +69,21 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
         modifier = Modifier.fillMaxSize().background(Color.Black),
         content = {
             PlaybackVideo(viewModel = viewModel)
-            CinemaPlayerScreen(
-                state = state,
-                viewModel = viewModel,
-                onSources = sourceViewModel::open,
-                onSettings = {
-                    settingsMenuEntry = SettingsPage.Proxy
-                    settingsPage = SettingsPage.Menu
-                },
-                onGuide = { id -> guideChannelId = id },
-                selectedRowFocus = selectedRowFocus,
-                dialogOpen = dialogOpen,
-                television = television
-            )
+            TvUiSurface(modifier = Modifier.fillMaxSize(), content = {
+                CinemaPlayerScreen(
+                    state = state,
+                    viewModel = viewModel,
+                    onSources = sourceViewModel::open,
+                    onSettings = {
+                        settingsMenuEntry = SettingsPage.Proxy
+                        settingsPage = SettingsPage.Menu
+                    },
+                    onGuide = { id -> guideChannelId = id },
+                    selectedRowFocus = selectedRowFocus,
+                    dialogOpen = dialogOpen,
+                    television = television
+                )
+            })
             SourceManagerDialog(viewModel = sourceViewModel)
             if (guideChannel != null) {
                 ProgrammeScheduleDialog(

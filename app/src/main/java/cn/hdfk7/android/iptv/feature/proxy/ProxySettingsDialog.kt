@@ -32,7 +32,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
@@ -46,8 +46,7 @@ import cn.hdfk7.android.iptv.core.ui.components.FormFieldSpacing
 import cn.hdfk7.android.iptv.core.ui.components.FormFieldWidth
 import cn.hdfk7.android.iptv.core.ui.components.FormTwoColumnWidth
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
-import cn.hdfk7.android.iptv.core.ui.components.requestWhenReady
-import cn.hdfk7.android.iptv.core.ui.components.tvFocusBackground
+import cn.hdfk7.android.iptv.core.ui.components.tvTextFieldColors
 import cn.hdfk7.android.iptv.core.ui.components.tvPanelNavigation
 
 private enum class ProxyControl { Power, Host, Port, Username, Password, Save, Cancel }
@@ -132,7 +131,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         LaunchedEffect(editing, block = {
             if (editing != null) {
                 withFrameNanos(onFrame = { _ -> })
-                if (fieldFocus.requestWhenReady()) {
+                if (fieldFocus.requestFocus()) {
                     keyboard?.show()
                 } else {
                     finishEditing()
@@ -190,7 +189,6 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
             })
             val requester = if (editing == control) Modifier.focusRequester(fieldFocus) else Modifier
             return requester.bringIntoViewRequester(bringIntoView).focusProperties(scope = { canFocus = editing == control })
-                .tvFocusBackground(focused = { selectedControl == control && editing == null }, selected = { false })
         }
         val actions = if (television) KeyboardActions(onDone = { finishEditing() }) else KeyboardActions.Default
         fun keyboardOptions(type: KeyboardType = KeyboardType.Text): KeyboardOptions {
@@ -211,26 +209,26 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
             )
         }
         val hostField: @Composable (Modifier) -> Unit = { modifier ->
-            OutlinedTextField(value = draft.host, onValueChange = { value -> updateDraft(draft.copy(host = value.trim())) },
+            OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Host), value = draft.host, onValueChange = { value -> updateDraft(draft.copy(host = value.trim())) },
                 label = { Text(stringResource(R.string.proxy_ip)) }, singleLine = true,
                 keyboardOptions = keyboardOptions(), keyboardActions = actions,
                 readOnly = television && editing != ProxyControl.Host, modifier = modifier.then(fieldModifier(ProxyControl.Host)))
         }
         val portField: @Composable (Modifier) -> Unit = { modifier ->
-            OutlinedTextField(value = draft.port, onValueChange = { value -> updateDraft(draft.copy(port = value)) },
+            OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Port), value = draft.port, onValueChange = { value -> updateDraft(draft.copy(port = value)) },
                 label = { Text(stringResource(R.string.proxy_port)) }, singleLine = true,
                 keyboardOptions = keyboardOptions(KeyboardType.Number), keyboardActions = actions,
                 readOnly = television && editing != ProxyControl.Port, modifier = modifier.then(fieldModifier(ProxyControl.Port)))
         }
         val usernameField: @Composable (Modifier) -> Unit = { modifier ->
-            OutlinedTextField(value = draft.username, onValueChange = { value -> updateDraft(draft.copy(username = value)) },
+            OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Username), value = draft.username, onValueChange = { value -> updateDraft(draft.copy(username = value)) },
                 label = { Text(stringResource(R.string.proxy_username)) }, singleLine = true,
                 keyboardOptions = keyboardOptions(), keyboardActions = actions,
                 readOnly = television && editing != ProxyControl.Username,
                 modifier = modifier.then(fieldModifier(ProxyControl.Username)))
         }
         val passwordField: @Composable (Modifier) -> Unit = { modifier ->
-            OutlinedTextField(value = draft.password, onValueChange = { value -> updateDraft(draft.copy(password = value)) },
+            OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Password), value = draft.password, onValueChange = { value -> updateDraft(draft.copy(password = value)) },
                 label = { Text(stringResource(R.string.proxy_password)) }, visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = keyboardOptions(KeyboardType.Password), keyboardActions = actions, singleLine = true,
                 readOnly = television && editing != ProxyControl.Password,

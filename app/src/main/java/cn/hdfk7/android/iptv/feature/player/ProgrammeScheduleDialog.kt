@@ -22,7 +22,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
@@ -30,14 +29,13 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.core.model.Programme
 import cn.hdfk7.android.iptv.core.model.programmeCurrentIndex
 import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
-import cn.hdfk7.android.iptv.core.ui.components.requestWhenReady
 import cn.hdfk7.android.iptv.core.ui.components.tvFocusBackground
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.CinemaMenuSurface
@@ -104,14 +102,11 @@ internal fun ProgrammeScheduleDialog(
         decorFitsSystemWindows = false), content = {
         val windowFocused = LocalWindowInfo.current.isWindowFocused
         val inputMode = LocalInputModeManager.current
-        val focusManager = LocalFocusManager.current
         LaunchedEffect(television, windowFocused, block = {
             if (television && windowFocused) {
                 inputMode.requestInputMode(InputMode.Keyboard)
                 withFrameNanos(onFrame = { _ -> })
-                focusManager.clearFocus(force = true)
-                withFrameNanos(onFrame = { _ -> })
-                panelFocus.requestWhenReady()
+                panelFocus.requestFocus()
             }
         })
         Column(
