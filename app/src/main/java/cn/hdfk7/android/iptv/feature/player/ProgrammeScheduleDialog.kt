@@ -8,45 +8,40 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.core.model.Programme
+import cn.hdfk7.android.iptv.core.model.programmeCurrentIndex
+import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 import cn.hdfk7.android.iptv.core.ui.components.requestWhenReady
+import cn.hdfk7.android.iptv.core.ui.components.tvFocusBackground
+import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.CinemaMenuSurface
-import cn.hdfk7.android.iptv.core.ui.theme.FocusBorder
-import cn.hdfk7.android.iptv.core.ui.theme.FocusCornerRadius
-import cn.hdfk7.android.iptv.core.ui.theme.FocusFill
-import cn.hdfk7.android.iptv.core.ui.theme.FocusStroke
 import cn.hdfk7.android.iptv.core.ui.theme.Muted
-import cn.hdfk7.android.iptv.core.ui.theme.SelectedPanel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -59,24 +54,18 @@ internal fun ProgrammeScheduleDialog(
     onClose: () -> Unit
 ): Unit {
     val now = System.currentTimeMillis()
-    val currentIndex = programmes.indexOfFirst(predicate = { item -> item.startsAt <= now && now < item.endsAt })
-    val firstProgramme = programmes.indexOfFirst(predicate = { item -> item.endsAt > now }).coerceAtLeast(0)
+    val currentIndex = programmeCurrentIndex(programmes, now)
+    val firstProgramme = if (currentIndex >= 0) {
+        currentIndex
+    } else {
+        programmes.indexOfFirst(predicate = { item -> item.endsAt > now }).coerceAtLeast(0)
+    }
     val timeFormat = remember(calculation = { DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()) })
+    val rowPadding = 10.dp
     val list = rememberLazyListState(initialFirstVisibleItemIndex = firstProgramme)
     val panelFocus = remember(calculation = { FocusRequester() })
     // -1 is the Close button; programme rows never own native TV focus.
     var focusedIndex by remember(programmes, calculation = { mutableIntStateOf(if (programmes.isEmpty()) -1 else firstProgramme) })
-    var panelCoordinates by remember(calculation = { mutableStateOf<LayoutCoordinates?>(null) })
-    val itemCoordinates = remember(calculation = { mutableStateMapOf<Int, LayoutCoordinates>() })
-    fun bounds(index: Int): Rect? {
-        val panel = panelCoordinates
-        val item = itemCoordinates[index]
-        return if (panel?.isAttached == true && item?.isAttached == true) {
-            panel.localBoundingBoxOf(item, clipBounds = true)
-        } else {
-            null
-        }
-    }
     LaunchedEffect(television, programmes, focusedIndex, block = {
         if (television && focusedIndex >= 0) {
             list.revealItem(focusedIndex)
@@ -128,33 +117,21 @@ internal fun ProgrammeScheduleDialog(
         Column(
             modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp)
                 .width(560.dp).heightIn(max = 480.dp).then(navigation)
-                .onGloballyPositioned(onGloballyPositioned = { coordinates -> panelCoordinates = coordinates })
                 .background(CinemaMenuSurface, RoundedCornerShape(22.dp))
-                .drawWithContent(onDraw = {
-                    val radius = CornerRadius(FocusCornerRadius.toPx())
-                    val current = bounds(currentIndex)
-                    if (currentIndex >= 0 && current != null) {
-                        drawRoundRect(color = SelectedPanel, topLeft = current.topLeft, size = current.size, cornerRadius = radius)
-                    }
-                    val focused = if (television) bounds(focusedIndex) else null
-                    val focusedRadius = if (focusedIndex == -1 && focused != null) CornerRadius(focused.width / 2) else radius
-                    if (focused != null) {
-                        drawRoundRect(color = FocusFill, topLeft = focused.topLeft, size = focused.size, cornerRadius = focusedRadius)
-                    }
-                    drawContent()
-                    if (focused != null) {
-                        drawRoundRect(color = FocusBorder, topLeft = focused.topLeft, size = focused.size,
-                            cornerRadius = focusedRadius, style = Stroke(width = FocusStroke.toPx()))
-                    }
-                }).padding(16.dp),
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             content = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
-                    Text(text = stringResource(R.string.guide_title, channelName), color = Color.White, modifier = Modifier.weight(1f))
+                    DialogTitle(text = stringResource(R.string.guide_title, channelName),
+                        modifier = Modifier.weight(1f).padding(start = rowPadding))
+                    val closeNavigation = if (television) {
+                        Modifier.focusProperties(scope = { canFocus = false })
+                            .semantics(properties = { selected = focusedIndex == -1 })
+                    } else {
+                        Modifier
+                    }
                     TvIconButton(icon = R.drawable.ic_close, description = stringResource(R.string.close), onClick = onClose,
-                        modifier = Modifier.focusProperties(scope = { canFocus = !television })
-                            .onGloballyPositioned(onGloballyPositioned = { coordinates -> itemCoordinates[-1] = coordinates })
-                            .semantics(properties = { selected = television && focusedIndex == -1 }))
+                        modifier = closeNavigation, focusHighlight = if (television) focusedIndex == -1 else null)
                 })
                 if (programmes.isEmpty()) {
                     Text(text = stringResource(R.string.guide_empty), color = Muted)
@@ -162,16 +139,26 @@ internal fun ProgrammeScheduleDialog(
                     LazyColumn(state = list, modifier = Modifier.weight(1f, fill = false),
                         verticalArrangement = Arrangement.spacedBy(4.dp), content = {
                             itemsIndexed(items = programmes, itemContent = { index, item ->
+                                val current = index == currentIndex
+                                val focusSemantics = if (television) {
+                                    Modifier.semantics(mergeDescendants = true, properties = { selected = focusedIndex == index })
+                                } else {
+                                    Modifier
+                                }
                                 Row(
-                                    modifier = Modifier.fillMaxWidth()
-                                        .onGloballyPositioned(onGloballyPositioned = { coordinates -> itemCoordinates[index] = coordinates })
-                                        .semantics(mergeDescendants = true, properties = { selected = television && focusedIndex == index })
-                                        .padding(10.dp),
+                                    modifier = Modifier.fillMaxWidth().tvFocusBackground(
+                                        focused = { television && focusedIndex == index },
+                                        selected = { current },
+                                        borderColor = Accent
+                                    ).then(focusSemantics).padding(rowPadding),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     content = {
-                                        Text(text = timeFormat.format(Instant.ofEpochMilli(item.startsAt)), color = Color.White)
-                                        Text(text = if (index == currentIndex) stringResource(R.string.programme_current, item.title) else item.title,
-                                            color = Color.White, modifier = Modifier.weight(1f))
+                                        Text(text = timeFormat.format(Instant.ofEpochMilli(item.startsAt)), color = Color.White,
+                                            modifier = Modifier.alignByBaseline().widthIn(min = 44.dp),
+                                            style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum"), maxLines = 1)
+                                        Text(text = if (current) stringResource(R.string.programme_current, item.title) else item.title,
+                                            color = Color.White, modifier = Modifier.weight(1f).alignByBaseline(),
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 )
                             })

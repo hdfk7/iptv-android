@@ -5,6 +5,8 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -60,6 +62,20 @@ class MainActivity : ComponentActivity() {
             insets.isAppearanceLightNavigationBars = false
         }
         setContent(content = {
+            if (!television && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val cutoutMode = if (viewModel.fillVideoScreen) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                }
+                SideEffect {
+                    val attributes = window.attributes
+                    if (attributes.layoutInDisplayCutoutMode != cutoutMode) {
+                        attributes.layoutInDisplayCutoutMode = cutoutMode
+                        window.attributes = attributes
+                    }
+                }
+            }
             LaunchedEffect(key1 = Unit, block = {
                 insets.hide(WindowInsetsCompat.Type.systemBars())
             })

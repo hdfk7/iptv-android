@@ -6,22 +6,8 @@ import android.graphics.Bitmap
 import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.util.Log
-import cn.hdfk7.android.iptv.core.data.local.LineHistory
-import cn.hdfk7.android.iptv.core.data.local.GuideCache
-import cn.hdfk7.android.iptv.core.data.local.StandbyFrameCache
-import java.io.File
-import cn.hdfk7.android.iptv.core.data.network.parseXmltv
-import cn.hdfk7.android.iptv.core.model.GuideRef
-import cn.hdfk7.android.iptv.core.model.Programme
-import cn.hdfk7.android.iptv.core.model.ProgrammePreview
-import cn.hdfk7.android.iptv.core.model.RecentChannels
-import org.json.JSONArray
-import cn.hdfk7.android.iptv.core.model.programmePreview
-import cn.hdfk7.android.iptv.core.model.programmeDay
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withContext
 import android.os.SystemClock
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -30,26 +16,32 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
-import cn.hdfk7.android.iptv.core.data.network.ProxyHttpClient
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
-import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.BuildConfig
-import cn.hdfk7.android.iptv.core.model.ChannelAggregation
+import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.app.IptvApplication
-import cn.hdfk7.android.iptv.core.model.SourceLibrary
-import cn.hdfk7.android.iptv.core.model.LibraryException
-import cn.hdfk7.android.iptv.core.data.repository.RefreshEngine
+import cn.hdfk7.android.iptv.core.data.local.GuideCache
+import cn.hdfk7.android.iptv.core.data.local.LineHistory
+import cn.hdfk7.android.iptv.core.data.local.StandbyFrameCache
+import cn.hdfk7.android.iptv.core.data.network.ProxyHttpClient
 import cn.hdfk7.android.iptv.core.data.repository.LibraryRules
+import cn.hdfk7.android.iptv.core.data.repository.RefreshEngine
 import cn.hdfk7.android.iptv.core.model.Channel
+import cn.hdfk7.android.iptv.core.model.ChannelAggregation
+import cn.hdfk7.android.iptv.core.model.LibraryException
 import cn.hdfk7.android.iptv.core.model.LineQuality
+import cn.hdfk7.android.iptv.core.model.RecentChannels
+import cn.hdfk7.android.iptv.core.model.SourceLibrary
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,7 +51,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import org.json.JSONArray
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -75,7 +69,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     var player: ExoPlayer? by mutableStateOf(null)
         private set
     private var httpClient: okhttp3.OkHttpClient? = null
-    @Volatile private var lineAddress: String? = null
+    @Volatile private var attempt: PlaybackAttempt? = null
+    private var attemptNumber = 0L
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var activeChannel: Channel? = null
     private var streamIndex = 0
@@ -91,6 +86,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var autoPlayPending = true
     var resumeEnabled: Boolean by mutableStateOf(resumePending)
         private set
+    var fillVideoScreen: Boolean by mutableStateOf(viewing.getBoolean("fill_video_screen", false))
+        private set
+
+    fun toggleFillVideoScreen(): Unit {
+        fillVideoScreen = !fillVideoScreen
+        viewing.edit().putBoolean("fill_video_screen", fillVideoScreen).apply()
+    }
 
     fun toggleResume(): Unit {
         resumeEnabled = !resumeEnabled
@@ -128,13 +130,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var fallback: Job? = null
     private var generation = 0
     private var refreshJob: Job? = null
-    private var guideJob: Job? = null
-    private val guideCache = GuideCache(File(application.cacheDir, "programme-guides"))
-    private var guideRefs: Set<GuideRef> = emptySet()
-    private var guideData: Map<GuideRef, List<Programme>> = emptyMap()
+    private val guide = PlayerProgrammeGuide(
+        scope = viewModelScope,
+        cache = GuideCache(File(application.cacheDir, "programme-guides")),
+        download = app.downloader::downloadGuide,
+        publish = { snapshot ->
+            mutableState.value = state.value.copy(programmePreviews = snapshot.previews, programmeSchedules = snapshot.schedules)
+        }
+    )
     private var guideForeground = false
-    private var attemptStartedAt = 0L
-    private var firstFrameMs = 0L
     private var tuneStartedAt = 0L
     private var fallbackStartedAt = 0L
     internal var moreMenuRequested: Boolean by mutableStateOf(false)
@@ -220,7 +224,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     message = if (catalog.storageFailed) R.string.storage_error else state.value.message
                 )
                 if (guideForeground) {
-                    loadGuide()
+                    guide.show(catalog.channels)
                 }
                 if (catalog.loaded) {
                     catalogToken = token
@@ -256,7 +260,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun recordRecent(): Unit {
         val channel = activeChannel ?: return
         val current = state.value
-        if (!wantsPlayback || lineAddress == null || current.activeSourceId != channel.sourceId) {
+        if (!wantsPlayback || attempt?.address == null || current.activeSourceId != channel.sourceId) {
             return
         }
         val updated = RecentChannels.record(current.recentChannelIds, channel.id)
@@ -264,91 +268,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             viewing.edit().putString("recent:${channel.sourceId}", JSONArray(updated).toString()).apply()
             mutableState.value = current.copy(recentChannelIds = updated)
         }
-    }
-
-    private fun loadGuide(force: Boolean = false): Unit {
-        val channels = state.value.channels
-        val refs = channels.flatMap(transform = { channel -> channel.guideRefs }).toSet()
-        if (refs == guideRefs && !force) {
-            publishGuide()
-            return
-        }
-        guideJob?.cancel()
-        guideRefs = refs
-        guideData = guideData.filterKeys(predicate = refs::contains)
-        publishGuide()
-        if (refs.isEmpty()) {
-            return
-        }
-        guideJob = viewModelScope.launch(block = {
-            val now = System.currentTimeMillis()
-            val sources = refs.groupBy(keySelector = GuideRef::address).entries.take(4)
-            val missing = refs - guideData.keys
-            if (missing.isNotEmpty()) {
-                val cached = withContext(context = Dispatchers.IO, block = {
-                    val result = mutableMapOf<GuideRef, List<Programme>>()
-                    for ((address, entries) in sources) {
-                        val requested = entries.filter(predicate = missing::contains)
-                        if (requested.isNotEmpty()) {
-                            val feed = guideCache.read(address, now)
-                            if (feed != null) {
-                                val parsed = runCatching(block = { parseXmltv(feed, requested, now) }).getOrNull()
-                                if (parsed != null) {
-                                    result.putAll(parsed)
-                                }
-                            }
-                        }
-                    }
-                    result
-                })
-                guideData = guideData + cached
-                publishGuide()
-            }
-            val data = withContext(context = Dispatchers.IO, block = {
-                val result = mutableMapOf<GuideRef, List<Programme>>()
-                for ((address, entries) in sources) {
-                    try {
-                        val feed = app.downloader.downloadGuide(address)
-                        result.putAll(parseXmltv(feed, entries, now))
-                        guideCache.write(address, feed)
-                    } catch (exception: CancellationException) {
-                        throw exception
-                    } catch (exception: Exception) {
-                        // An unavailable guide leaves the last successful schedule visible.
-                    }
-                }
-                result
-            })
-            guideData = guideData + data
-            while (true) {
-                publishGuide()
-                delay(30_000L)
-            }
-        })
-    }
-
-    private fun publishGuide(): Unit {
-        val now = System.currentTimeMillis()
-        val (dayStart, dayEnd) = programmeDay(now)
-        val previews = mutableMapOf<String, ProgrammePreview>()
-        val schedules = mutableMapOf<String, List<Programme>>()
-        for (channel in state.value.channels) {
-            val candidates = channel.guideRefs.mapNotNull(transform = guideData::get)
-                .map(transform = { items -> items to programmePreview(items, now) })
-            val preferred = candidates.firstOrNull(predicate = { entry -> entry.second.current != null })
-                ?: candidates.firstOrNull(predicate = { entry -> entry.second.next != null })
-            if (preferred != null) {
-                previews[channel.id] = preferred.second
-            }
-            val today = (listOfNotNull(preferred) + candidates).firstNotNullOfOrNull(transform = { entry ->
-                entry.first.filter(predicate = { item -> item.endsAt > dayStart && item.startsAt < dayEnd })
-                    .takeIf(predicate = List<Programme>::isNotEmpty)
-            })
-            if (today != null) {
-                schedules[channel.id] = today
-            }
-        }
-        mutableState.value = state.value.copy(programmePreviews = previews, programmeSchedules = schedules)
     }
 
     fun refresh() {
@@ -366,7 +285,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun refreshManually() {
         if (guideForeground) {
-            loadGuide(force = true)
+            guide.show(state.value.channels, force = true)
         }
         if (refreshJob?.isActive == true) {
             return
@@ -409,7 +328,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         mutableState.value = state.value.copy(infoVisible = false)
     }
 
-    fun toggleFavorite(channel: Channel) {
+    private fun toggleFavorite(channel: Channel) {
         viewModelScope.launch(block = {
             try {
                 repository.toggleFavorite(channel)
@@ -433,11 +352,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         wantsPlayback = false
         previewing = false
         clearPreviewScan()
-        lineAddress = null
+        attempt = null
         player?.stop()
         player?.clearMediaItems()
         mutableState.value = state.value.copy(playback = PlaybackStatus.IDLE, previewFrameVisible = false, cachedPreviewFrame = null,
-            line = 0, lineCount = 0, lines = emptyList())
+            line = 0, lineCount = 0)
     }
 
     private fun clearSelection() {
@@ -451,8 +370,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         updateHistoryScope()
         val channel = activeChannel
         if (channel != null) {
-            activeChannel = channel.copy(streams = lineRanking.lines(channel.id, candidateStreams(channel))
-                .map(transform = { line -> line.url }))
+            activeChannel = rankedChannel(channel)
             attemptedLines.clear()
         }
         streamIndex = 0
@@ -464,7 +382,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun start() {
         if (!guideForeground) {
             guideForeground = true
-            loadGuide(force = true)
+            guide.show(state.value.channels, force = true)
         }
         if (player != null) {
             return
@@ -484,7 +402,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
                 val error = loadErrorInfo.exception as? HttpDataSource.InvalidResponseCodeException
                 // Fail over immediately for an unavailable line URL. Segment and transient failures keep Media3's retry policy.
-                if (error != null && error.dataSpec.uri.toString() == lineAddress &&
+                if (error != null && error.dataSpec.uri.toString() == attempt?.address &&
                     (error.responseCode == 401 || error.responseCode == 403 || error.responseCode == 404 || error.responseCode == 410)) {
                     return C.TIME_UNSET
                 }
@@ -497,64 +415,53 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             .setHandleAudioBecomingNoisy(true)
             .build()
         created.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int): Unit {
-                if (playbackState == Player.STATE_ENDED) {
-                    nextLine()
-                }
-            }
-
             override fun onEvents(player: Player, events: Player.Events): Unit {
-                if (player !== this@PlayerViewModel.player || previewing) {
-                    return
-                }
-                val manifest = player.currentManifest as? HlsManifest
-                if (player.playbackState == Player.STATE_READY && activeChannel?.guideRefs?.isNotEmpty() == true &&
-                    manifest?.mediaPlaylist?.hasEndTag == true) {
-                    // A completed recording cannot follow this channel's live programme schedule.
-                    nextLine()
-                    return
-                }
-                when (player.playbackState) {
-                    Player.STATE_BUFFERING -> {
-                        mutableState.value = state.value.copy(playback = PlaybackStatus.LOADING)
-                    }
-                    Player.STATE_READY -> {
-                        updatePlayingState()
-                    }
-                }
-            }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (created.playbackState == Player.STATE_READY) {
-                    val tracks = created.currentTracks
-                    if (isPlaying && (firstFrameMs > 0L ||
-                            (tracks.isTypeSelected(C.TRACK_TYPE_AUDIO) && !tracks.isTypeSelected(C.TRACK_TYPE_VIDEO)))) {
-                        recordRecent()
-                    }
-                }
-            }
-
-            override fun onRenderedFirstFrame(): Unit {
-                if (firstFrameMs != 0L || attemptStartedAt == 0L || lineAddress == null) {
+                val active = attempt ?: return
+                if (!ownsAttempt(player, active)) {
                     return
                 }
                 val now = SystemClock.elapsedRealtime()
-                firstFrameMs = (now - attemptStartedAt).coerceAtLeast(1L)
+                if (active.tracksAt == null && !player.currentTracks.isEmpty) {
+                    active.tracksAt = now
+                }
+                if (player.playbackState == Player.STATE_READY && active.readyAt == null) {
+                    active.readyAt = now
+                }
+                if (player.playerError != null || player.playbackState == Player.STATE_ENDED ||
+                    (!previewing && isCompletedRecording(player))) {
+                    nextLine()
+                    return
+                }
+                publishPlaybackStatus(player, active)
+            }
+        })
+        created.addAnalyticsListener(object : AnalyticsListener {
+            override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long): Unit {
+                val active = attempt ?: return
+                val timeline = eventTime.timeline
+                if (!ownsAttempt(created, active) || active.firstFrameAt != null ||
+                    eventTime.windowIndex !in 0 until timeline.windowCount ||
+                    timeline.getWindow(eventTime.windowIndex, Timeline.Window()).mediaItem.mediaId != active.id ||
+                    (!previewing && isCompletedRecording(created))) {
+                    return
+                }
+                val now = SystemClock.elapsedRealtime()
+                active.firstFrameAt = now
                 activeChannel?.let(block = { channel ->
                     previewFrameRequest = PreviewFrameRequest(previewKey(channel), previewing)
                 })
                 if (previewing) {
                     return
                 }
-                recordRecent()
+                publishPlaybackStatus(created, active)
                 if (BuildConfig.APP_DEBUG_SWITCH) {
-                    Log.d("IptvPlayback", "first_frame_ms=$firstFrameMs tune_ms=${now - tuneStartedAt} recovery_ms=${if (fallbackStartedAt > 0L) now - fallbackStartedAt else 0L} first_line=${attemptedLines.isEmpty()} tune_id=$generation")
+                    val tracksMs = active.tracksAt?.let(block = { time -> time - active.startedAt }) ?: -1
+                    val readyMs = active.readyAt?.let(block = { time -> time - active.startedAt }) ?: -1
+                    Log.d("IptvPlayback", "first_frame_ms=${(now - active.startedAt).coerceAtLeast(1L)} " +
+                        "tune_ms=${now - tuneStartedAt} recovery_ms=${if (fallbackStartedAt > 0L) now - fallbackStartedAt else 0L} " +
+                        "first_line=${attemptedLines.isEmpty()} tune_id=$generation tracks_ms=$tracksMs ready_ms=$readyMs")
                 }
                 fallbackStartedAt = 0L
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                nextLine()
             }
         })
         player = created
@@ -563,8 +470,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             updateHistoryScope()
             val channel = activeChannel
             if (oldScope != historyScope && channel != null) {
-                activeChannel = channel.copy(streams = lineRanking.lines(channel.id, candidateStreams(channel))
-                    .map(transform = { line -> line.url }))
+                activeChannel = rankedChannel(channel)
                 streamIndex = 0
                 attemptedLines.clear()
             }
@@ -576,11 +482,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun stop() {
         guideForeground = false
-        guideJob?.cancel()
+        guide.stop()
         generation += 1
         fallback?.cancel()
         timeout?.cancel()
-        lineAddress = null
+        attempt = null
         clearPreviewScan()
         mutableState.value = state.value.copy(previewFrameVisible = false)
         val current = player
@@ -608,8 +514,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (playing) {
             rememberChannel(channel)
         }
-        val sorted = lineRanking.lines(channel.id, candidateStreams(channel))
-        selectLine(channel.copy(streams = sorted.map(transform = { line -> line.url })), 0, playing)
+        selectLine(rankedChannel(channel), 0, playing)
     }
 
     private fun rememberChannel(channel: Channel): Unit {
@@ -617,6 +522,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (viewing.getString(preference, null) != channel.id) {
             viewing.edit().putString(preference, channel.id).apply()
         }
+    }
+
+    private fun rankedChannel(channel: Channel): Channel {
+        val ranked = lineRanking.lines(channel.id, candidateStreams(channel))
+        return channel.copy(streams = ranked.map(transform = { line -> line.url }))
     }
 
     private fun candidateStreams(channel: Channel): List<String> {
@@ -643,10 +553,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             selectedSourceName = channel.sourceName, cachedPreviewFrame = null)
         if (previewing) {
             val key = previewKey(channel)
+            val expectedGeneration = generation
             viewModelScope.launch(block = {
                 val cached = withContext(Dispatchers.IO, block = { standbyFrames.read(key) })
                 val current = activeChannel
-                if (cached != null && previewing && current != null && previewKey(current) == key &&
+                if (cached != null && generation == expectedGeneration && previewing && current != null && previewKey(current) == key &&
                     !state.value.previewFrameVisible) {
                     mutableState.value = state.value.copy(cachedPreviewFrame = cached)
                 }
@@ -695,7 +606,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun retry() {
+    private fun retry() {
         val current = state.value.channels.firstOrNull(predicate = { channel -> channel.id == state.value.selectedId }) ?: activeChannel
         if (current != null) {
             select(current)
@@ -727,7 +638,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             previewing = false
             activeChannel?.let(block = ::rememberChannel)
             val current = player
-            if (lineAddress == null || current?.currentMediaItem == null) {
+            if (attempt?.address == null || current?.currentMediaItem == null) {
                 activeChannel?.let(block = ::select)
                 return
             }
@@ -743,7 +654,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         wantsPlayback = playing
-        player?.playWhenReady = playing
+        player?.let(block = { current ->
+            current.playWhenReady = playing
+            attempt?.let(block = { active -> publishPlaybackStatus(current, active) })
+        })
     }
 
     fun changeVolume(direction: Int) {
@@ -759,36 +673,35 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun playLine() {
-        publishLineRanking()
         val channel = activeChannel ?: return
         val current = player ?: return
+        attempt = null
         clearPreviewScan()
         timeout?.cancel()
         val limit = channel.streams.size
         if (streamIndex >= limit) {
-            lineAddress = null
             current.stop()
             mutableState.value = state.value.copy(
-                playback = if (previewing) PlaybackStatus.IDLE else PlaybackStatus.ERROR, previewFrameVisible = false)
+                playback = if (previewing) PlaybackStatus.IDLE else PlaybackStatus.ERROR,
+                previewFrameVisible = false, line = 0, lineCount = limit)
             if (BuildConfig.APP_DEBUG_SWITCH) {
                 Log.d("IptvPlayback", "tune_failed_id=$generation")
             }
             return
         }
         mutableState.value = state.value.copy(
-            playback = if (previewing) PlaybackStatus.IDLE else PlaybackStatus.LOADING, previewFrameVisible = false)
+            playback = if (previewing) PlaybackStatus.IDLE else PlaybackStatus.LOADING,
+            previewFrameVisible = false, line = streamIndex + 1, lineCount = limit)
         if (current.currentMediaItem != null) {
             // Reset the decoder before switching between independent live streams.
             current.stop()
         }
-        val address = channel.streams[streamIndex]
-        lineAddress = address
-        attemptStartedAt = SystemClock.elapsedRealtime()
-        firstFrameMs = 0L
-        current.setMediaItem(MediaItem.fromUri(address))
+        val active = PlaybackAttempt((++attemptNumber).toString(), channel.streams[streamIndex], SystemClock.elapsedRealtime())
+        attempt = active
+        current.setMediaItem(MediaItem.Builder().setMediaId(active.id).setUri(active.address).build())
         current.playWhenReady = wantsPlayback
         current.prepare()
-        watchLineHealth(current)
+        watchLineHealth(current, active)
     }
 
     private fun previewKey(channel: Channel): String = "${catalogToken.orEmpty()}\n${channel.id}"
@@ -841,6 +754,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         val channel = activeChannel ?: return
         val url = channel.streams[streamIndex]
+        attempt = null
         if (fallbackStartedAt == 0L) {
             fallbackStartedAt = SystemClock.elapsedRealtime()
         }
@@ -861,13 +775,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         })
     }
 
-    private fun watchLineHealth(current: ExoPlayer) {
+    private fun watchLineHealth(current: ExoPlayer, active: PlaybackAttempt): Unit {
         val limit = BuildConfig.STREAM_PROBE_TIMEOUT_MS.toLong()
         val channel = activeChannel ?: return
-        val url = channel.streams.getOrNull(streamIndex) ?: return
         timeout = viewModelScope.launch(block = {
-            val startedAt = attemptStartedAt
-            var lastSample = SystemClock.elapsedRealtime()
+            var lastSample = active.startedAt
             var startupMs = 0L
             var playedMs = 0L
             val observation = LineObservationWindow()
@@ -877,6 +789,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             var stableMs = 0L
             while (true) {
                 delay(minOf(1000L, limit.coerceAtLeast(1L)))
+                if (!ownsAttempt(current, active)) {
+                    return@launch
+                }
                 val now = SystemClock.elapsedRealtime()
                 val elapsed = now - lastSample
                 lastSample = now
@@ -884,8 +799,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 counters?.ensureUpdated()
                 val renderedFrames = counters?.renderedOutputBufferCount
                 val videoExpected = current.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)
-                if (previewing && firstFrameMs == 0L && now - startedAt >= limit &&
-                    (current.playbackState != Player.STATE_READY || videoExpected)) {
+                val audioOnly = hasReadyAudioOnly(current)
+                if (active.startupTimedOut(elapsed, wantsPlayback || previewing, audioOnly, limit)) {
                     nextLine()
                     return@launch
                 }
@@ -894,9 +809,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 lastRenderedFrames = renderedFrames
 
                 if (wantsPlayback) {
-                    if (current.isPlaying && !stalled && (!videoExpected || (renderedFrames ?: 0) > 0)) {
+                    if (current.isPlaying && !stalled && active.canPresent(audioOnly)) {
                         if (startupMs == 0L) {
-                            startupMs = firstFrameMs.takeIf(predicate = { time -> time > 0L }) ?: (now - startedAt)
+                            startupMs = active.firstFrameAt?.minus(active.startedAt) ?: (now - active.startedAt)
                         }
                         playedMs += elapsed
                     } else if (stalled && startupMs > 0L) {
@@ -924,11 +839,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     paused = !wantsPlayback || (!current.isPlaying && !stalled))) {
                     val format = current.videoFormat
                     val size = current.videoSize
-                    lineRanking.record(channel.id, url, LineQuality(
+                    lineRanking.record(channel.id, active.address, LineQuality(
                         width = if (size.width > 0) size.width else (format?.width ?: 0).coerceAtLeast(0),
                         height = if (size.height > 0) size.height else (format?.height ?: 0).coerceAtLeast(0),
                         frameRate = (format?.frameRate ?: 0f).coerceAtLeast(0f),
-                        startupMs = firstFrameMs.takeIf(predicate = { time -> time > 0L }) ?: startupMs,
+                        startupMs = startupMs,
                         playedMs = playedMs,
                         stalledMs = bufferingMs,
                         renderedFrames = renderedFrames ?: 0,
@@ -950,19 +865,36 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (index >= 0) {
             streamIndex = index
         }
-        mutableState.value = state.value.copy(lines = lines, line = if (index >= 0) index + 1 else 0, lineCount = lines.size)
+        mutableState.value = state.value.copy(line = if (index >= 0) index + 1 else 0, lineCount = lines.size)
     }
 
-    private fun updatePlayingState() {
-        if (previewing) {
+    private fun ownsAttempt(current: Player, active: PlaybackAttempt): Boolean {
+        return player === current && attempt === active && current.currentMediaItem?.mediaId == active.id
+    }
+
+    private fun isCompletedRecording(current: Player): Boolean {
+        return current.playbackState == Player.STATE_READY && activeChannel?.guideRefs?.isNotEmpty() == true &&
+            (current.currentManifest as? HlsManifest)?.mediaPlaylist?.hasEndTag == true
+    }
+
+    private fun hasReadyAudioOnly(current: Player): Boolean {
+        val tracks = current.currentTracks
+        return current.playbackState == Player.STATE_READY && tracks.isTypeSelected(C.TRACK_TYPE_AUDIO) &&
+            tracks.groups.none(predicate = { group -> group.type == C.TRACK_TYPE_VIDEO })
+    }
+
+    private fun publishPlaybackStatus(current: Player, active: PlaybackAttempt): Unit {
+        if (previewing || !ownsAttempt(current, active)) {
             return
         }
-        val status = if (player?.isPlaying == true) {
-            PlaybackStatus.PLAYING
-        } else {
-            PlaybackStatus.PAUSED
+        val status = active.status(current.playbackState == Player.STATE_READY, current.isPlaying, wantsPlayback,
+            hasReadyAudioOnly(current))
+        if (state.value.playback != status) {
+            mutableState.value = state.value.copy(playback = status)
+            if (status == PlaybackStatus.PLAYING) {
+                recordRecent()
+            }
         }
-        mutableState.value = state.value.copy(playback = status)
     }
 
     override fun onCleared() {

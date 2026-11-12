@@ -15,8 +15,24 @@ internal fun programmeDay(now: Long, zone: ZoneId = ZoneId.systemDefault()): Pai
         date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
 }
 
+internal fun programmeScheduleForDay(programmes: List<Programme>, start: Long, end: Long): List<Programme> {
+    return programmes.mapNotNull(transform = { item ->
+        val startsAt = maxOf(start, item.startsAt)
+        val endsAt = minOf(end, item.endsAt)
+        if (startsAt < endsAt) {
+            item.copy(startsAt = startsAt, endsAt = endsAt)
+        } else {
+            null
+        }
+    }).distinct()
+}
+
+internal fun programmeCurrentIndex(programmes: List<Programme>, now: Long): Int {
+    return programmes.indexOfLast(predicate = { item -> item.startsAt <= now && now < item.endsAt })
+}
+
 internal fun programmePreview(programmes: List<Programme>, now: Long): ProgrammePreview {
-    val current = programmes.lastOrNull(predicate = { item -> item.startsAt <= now && now < item.endsAt })
+    val current = programmes.getOrNull(programmeCurrentIndex(programmes, now))
     val next = programmes.firstOrNull(predicate = { item -> item.startsAt >= (current?.endsAt ?: now) && item != current })
     return ProgrammePreview(current?.title, next?.title)
 }

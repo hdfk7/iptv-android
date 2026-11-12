@@ -36,6 +36,7 @@ internal class PlaybackLineRanking(
             .sortedWith(compareBy<PlaybackLine>({ line -> tier(line.quality) })
                 .thenBy({ line -> (stallRatio(line.quality) / 0.05).toInt() })
                 .thenBy({ line -> (dropRatio(line.quality) / 0.05).toInt() })
+                .thenBy({ line -> slowStartupTier(line.quality) })
                 .thenByDescending({ line -> (line.quality?.width ?: 0).toLong() * (line.quality?.height ?: 0) })
                 .thenByDescending({ line -> line.quality?.frameRate ?: 0f })
                 .thenBy({ line -> line.quality?.startupMs ?: Long.MAX_VALUE })
@@ -49,6 +50,15 @@ internal class PlaybackLineRanking(
             quality.failures > 0 -> 3
             quality.playedMs < 3000L -> 1
             stallRatio(quality) > 0.1 || dropRatio(quality) > 0.1 -> 2
+            else -> 0
+        }
+    }
+
+    private fun slowStartupTier(quality: LineQuality?): Int {
+        val startup = quality?.startupMs ?: Long.MAX_VALUE
+        return when (startup) {
+            in 2_001L..4_000L -> 1
+            in 4_001L until Long.MAX_VALUE -> 2
             else -> 0
         }
     }

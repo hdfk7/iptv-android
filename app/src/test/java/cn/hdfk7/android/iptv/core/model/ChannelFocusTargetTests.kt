@@ -26,6 +26,16 @@ class ChannelFocusTargetTests {
     }
 
     @Test
+    fun returnsToTheProgrammeGuideChannelWhenItIsStillInTheGroup(): Unit {
+        val first = channel("First")
+        val guide = channel("Guide")
+        val playing = channel("Playing")
+        assertEquals(guide, channelFocusTarget(listOf(first, guide), playing.id, returnToId = guide.id))
+        assertEquals(guide, channelFocusTarget(listOf(first, playing, guide), playing.id, returnToId = guide.id))
+        assertEquals(playing, channelFocusTarget(listOf(first, playing), playing.id, returnToId = guide.id))
+    }
+
+    @Test
     fun sameChannelNameFromAnotherSourceDoesNotMatch(): Unit {
         val first = channel("First")
         val otherSource = channel("Playing", source = "b")

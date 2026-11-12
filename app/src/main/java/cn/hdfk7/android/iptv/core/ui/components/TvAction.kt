@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 val LocalTvActionFocused = staticCompositionLocalOf(defaultFactory = { false })
+internal val TvIconButtonSize = 46.dp
 
 @Composable
 fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, enabled: Boolean = true, shape: Shape = RoundedCornerShape(FocusCornerRadius), focusScale: Float = 1f, containerColor: Color = Panel, focusFill: Color = FocusFill, focusInk: Color = FocusInk, focusBorderWidth: Dp = FocusStroke, contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 6.dp), focusHighlight: Boolean? = null, showUnfocusedBorder: Boolean = true, fitContentHeight: Boolean = false, content: @Composable RowScope.() -> Unit) {
@@ -83,8 +84,8 @@ fun TvAction(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boole
 }
 
 @Composable
-fun TvIconButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = Color.White, selected: Boolean = false, enabled: Boolean = true) {
-    TvAction(modifier = modifier.size(46.dp), onClick = onClick, selected = selected, enabled = enabled, shape = CircleShape, focusScale = 1f, containerColor = ButtonPanel, focusBorderWidth = FocusStroke, contentPadding = PaddingValues(0.dp), content = {
+fun TvIconButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = Color.White, selected: Boolean = false, enabled: Boolean = true, focusHighlight: Boolean? = null) {
+    TvAction(modifier = modifier.size(TvIconButtonSize), onClick = onClick, selected = selected, enabled = enabled, shape = CircleShape, focusScale = 1f, containerColor = ButtonPanel, focusBorderWidth = FocusStroke, contentPadding = PaddingValues(0.dp), focusHighlight = focusHighlight, content = {
         Icon(painter = painterResource(icon), contentDescription = description, tint = if (LocalTvActionFocused.current) FocusInk else tint, modifier = Modifier.size(20.dp))
     })
 }

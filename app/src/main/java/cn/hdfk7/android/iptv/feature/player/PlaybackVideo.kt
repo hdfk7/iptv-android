@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
@@ -66,7 +67,14 @@ internal fun PlaybackVideo(viewModel: PlayerViewModel): Unit {
             video
         },
         onRelease = { video -> video.player = null },
-        update = { video -> video.player = viewModel.player }
+        update = { video ->
+            video.resizeMode = if (viewModel.fillVideoScreen) {
+                AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            } else {
+                AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+            video.player = viewModel.player
+        }
     )
 }
 

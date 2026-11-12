@@ -110,7 +110,8 @@ internal suspend fun downloadApk(context: Context, release: AppRelease, onProgre
                             throw AppUpdateDownloadException(R.string.app_update_download_unavailable)
                         }
                         val body = checkNotNull(reply.body)
-                        val directory = File(context.cacheDir, "updates")
+                        val store = AppUpdateStore(context)
+                        val directory = store.directory
                         if (!directory.isDirectory && !directory.mkdirs()) {
                             throw AppUpdateDownloadException(R.string.app_update_save_failed)
                         }
@@ -126,47 +127,12 @@ internal suspend fun downloadApk(context: Context, release: AppRelease, onProgre
                                 })
                             })
                             onVerifying()
-                            @Suppress("DEPRECATION")
-                            val signingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                PackageManager.GET_SIGNING_CERTIFICATES
-                            } else {
-                                PackageManager.GET_SIGNATURES
-                            }
-                            val archive = context.packageManager.getPackageArchiveInfo(pending.path, signingFlags)
-                                ?: throw AppUpdateDownloadException(R.string.app_update_archive_unreadable)
-                            @Suppress("DEPRECATION")
-                            if (archive.packageName != context.packageName || archive.versionCode != release.versionCode) {
-                                throw AppUpdateDownloadException(R.string.app_update_archive_mismatch)
-                            }
-                            if ((archive.applicationInfo?.minSdkVersion ?: Int.MAX_VALUE) > Build.VERSION.SDK_INT) {
-                                throw AppUpdateDownloadException(R.string.app_update_android_unsupported)
-                            }
-                            val installed = context.packageManager.getPackageInfo(context.packageName, signingFlags)
-                            @Suppress("DEPRECATION")
-                            val installedSigners = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                installed.signingInfo?.apkContentsSigners
-                            } else {
-                                installed.signatures
-                            }
-                            @Suppress("DEPRECATION")
-                            val archiveSigners = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                archive.signingInfo?.apkContentsSigners
-                            } else {
-                                archive.signatures
-                            }
-                            val rotatedSigner = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
-                                installedSigners?.size == 1 && archiveSigners?.size == 1 &&
-                                archive.signingInfo?.signingCertificateHistory?.contains(installedSigners.single()) == true
-                            val signatureMatches = !installedSigners.isNullOrEmpty() && !archiveSigners.isNullOrEmpty() &&
-                                (installedSigners.toSet() == archiveSigners.toSet() || rotatedSigner)
-                            if (!signatureMatches) {
-                                throw AppUpdateDownloadException(R.string.app_update_signature_mismatch)
-                            }
+                            validateUpdateApk(context, pending, release)
                             if (!continuation.isActive) {
                                 throw CancellationException("Update download cancelled")
                             }
-                            val apk = File(directory, "iptv-update.apk")
-                            if (!pending.renameTo(apk)) {
+                            val apk = store.apk
+                            if (!pending.renameTo(apk) || !store.save(release)) {
                                 throw AppUpdateDownloadException(R.string.app_update_save_failed)
                             }
                             apk
@@ -179,3 +145,42 @@ internal suspend fun downloadApk(context: Context, release: AppRelease, onProgre
             }
         })
     })
+
+internal fun validateUpdateApk(context: Context, pending: File, release: AppRelease): Unit {
+    @Suppress("DEPRECATION")
+    val signingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        PackageManager.GET_SIGNING_CERTIFICATES
+    } else {
+        PackageManager.GET_SIGNATURES
+    }
+    val archive = context.packageManager.getPackageArchiveInfo(pending.path, signingFlags)
+        ?: throw AppUpdateDownloadException(R.string.app_update_archive_unreadable)
+    @Suppress("DEPRECATION")
+    if (archive.packageName != context.packageName || archive.versionCode != release.versionCode) {
+        throw AppUpdateDownloadException(R.string.app_update_archive_mismatch)
+    }
+    if ((archive.applicationInfo?.minSdkVersion ?: Int.MAX_VALUE) > Build.VERSION.SDK_INT) {
+        throw AppUpdateDownloadException(R.string.app_update_android_unsupported)
+    }
+    val installed = context.packageManager.getPackageInfo(context.packageName, signingFlags)
+    @Suppress("DEPRECATION")
+    val installedSigners = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        installed.signingInfo?.apkContentsSigners
+    } else {
+        installed.signatures
+    }
+    @Suppress("DEPRECATION")
+    val archiveSigners = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        archive.signingInfo?.apkContentsSigners
+    } else {
+        archive.signatures
+    }
+    val rotatedSigner = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+        installedSigners?.size == 1 && archiveSigners?.size == 1 &&
+        archive.signingInfo?.signingCertificateHistory?.contains(installedSigners.single()) == true
+    val signatureMatches = !installedSigners.isNullOrEmpty() && !archiveSigners.isNullOrEmpty() &&
+        (installedSigners.toSet() == archiveSigners.toSet() || rotatedSigner)
+    if (!signatureMatches) {
+        throw AppUpdateDownloadException(R.string.app_update_signature_mismatch)
+    }
+}

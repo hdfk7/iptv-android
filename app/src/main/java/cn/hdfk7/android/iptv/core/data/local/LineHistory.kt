@@ -11,16 +11,17 @@ internal class LineHistory(private val preferences: SharedPreferences) {
         const val MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L
     }
 
-    private val timestamps = preferences.all.mapValues(transform = { entry ->
-        runCatching(block = { JSONObject(entry.value as String).getLong("at") }).getOrDefault(0L)
-    }).toMutableMap()
+    private data class Entry(val recordedAt: Long, val quality: LineQuality)
+    private val entries = mutableMapOf<String, Entry>()
 
     init {
         val now = System.currentTimeMillis()
         val editor = preferences.edit()
-        for ((key, at) in timestamps.toMap()) {
-            if (now - at !in 0..MAX_AGE_MS) {
-                timestamps.remove(key)
+        for ((key, value) in preferences.all) {
+            val entry = decode(value)
+            if (entry != null && now - entry.recordedAt in 0..MAX_AGE_MS) {
+                entries[key] = entry
+            } else {
                 editor.remove(key)
             }
         }
@@ -33,17 +34,19 @@ internal class LineHistory(private val preferences: SharedPreferences) {
     }
 
     fun read(key: String): LineQuality? {
-        val at = timestamps[key] ?: return null
-        if (System.currentTimeMillis() - at !in 0..MAX_AGE_MS) {
-            return null
-        }
+        val entry = entries[key] ?: return null
+        return entry.quality.takeIf(predicate = { System.currentTimeMillis() - entry.recordedAt in 0..MAX_AGE_MS })
+    }
+
+    private fun decode(value: Any?): Entry? {
+        val stored = value as? String ?: return null
         return runCatching(block = {
-            val json = JSONObject(preferences.getString(key, null) ?: return null)
-            LineQuality(
+            val json = JSONObject(stored)
+            Entry(json.getLong("at"), LineQuality(
                 width = json.getInt("width"), height = json.getInt("height"), frameRate = json.getDouble("fps").toFloat(),
                 startupMs = json.getLong("startup"), playedMs = json.getLong("played"), stalledMs = json.getLong("stalled"),
                 renderedFrames = json.getInt("rendered"), droppedFrames = json.getInt("dropped"), failures = json.getInt("failures")
-            )
+            ))
         }).getOrNull()
     }
 
@@ -54,10 +57,10 @@ internal class LineHistory(private val preferences: SharedPreferences) {
             .put("stalled", quality.stalledMs).put("rendered", quality.renderedFrames)
             .put("dropped", quality.droppedFrames).put("failures", quality.failures)
         val editor = preferences.edit()
-        timestamps[key] = now
-        if (timestamps.size > MAX_ENTRIES) {
-            val oldest = timestamps.minBy(selector = { entry -> entry.value }).key
-            timestamps.remove(oldest)
+        entries[key] = Entry(now, quality)
+        if (entries.size > MAX_ENTRIES) {
+            val oldest = entries.minBy(selector = { entry -> entry.value.recordedAt }).key
+            entries.remove(oldest)
             editor.remove(oldest)
         }
         editor.putString(key, json.toString()).apply()

@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
@@ -26,7 +27,8 @@ internal fun CinemaAction(
     icon: Int? = null,
     tint: Color = Accent,
     interactive: Boolean = true,
-    focusHighlight: Boolean? = null
+    focusHighlight: Boolean? = null,
+    horizontalPadding: Dp = 12.dp
 ): Unit {
     val labelContent: @Composable () -> Unit = {
         if (icon != null) {
@@ -38,7 +40,7 @@ internal fun CinemaAction(
         }
     }
     if (!interactive) {
-        Box(modifier = modifier.height(46.dp).defaultMinSize(minWidth = 58.dp).padding(horizontal = 12.dp),
+        Box(modifier = modifier.height(46.dp).defaultMinSize(minWidth = 58.dp).padding(horizontal = horizontalPadding),
             contentAlignment = Alignment.Center, content = { labelContent() })
         return
     }
@@ -50,7 +52,7 @@ internal fun CinemaAction(
         focusBorderWidth = FocusStroke,
         showUnfocusedBorder = false,
         focusHighlight = focusHighlight,
-        contentPadding = PaddingValues(horizontal = 12.dp),
+        contentPadding = PaddingValues(horizontal = horizontalPadding),
         content = { labelContent() }
     )
 }

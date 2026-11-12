@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalView
@@ -31,6 +33,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.R
@@ -210,6 +213,10 @@ internal fun CinemaPlayerScreen(
         val portrait = !television && maxHeight > maxWidth
         val inset = minOf(32.dp, maxWidth * 0.04f)
         val bottom = if (television) 20.dp else 10.dp
+        val portraitInset = if (maxWidth < 360.dp) 12.dp else 16.dp
+        val portraitWidth = Modifier.padding(horizontal = portraitInset).widthIn(max = 480.dp).fillMaxWidth()
+        var portraitControlsHeight by remember(calculation = { mutableIntStateOf(0) })
+        val portraitBottom = with(LocalDensity.current) { portraitControlsHeight.toDp() }
         val controlInsets = if (television) {
             Modifier
         } else {
@@ -241,12 +248,14 @@ internal fun CinemaPlayerScreen(
         }
         PlaybackSurface(
             state = state,
+            fillVideoScreen = viewModel.fillVideoScreen,
             showPlaybackStatus = !dialogOpen && visiblePanel == TvPanel.Controls,
             onPlay = if (!television && state.channels.isNotEmpty()) viewModel::togglePlayback else null,
             modifier = Modifier.fillMaxSize().then(surfaceInput)
         )
         if (state.infoVisible && !dialogOpen) {
-            Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(118.dp)
+            Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .height(if (portrait) maxOf(118.dp, portraitBottom + 20.dp) else 118.dp)
                 .background(Brush.verticalGradient(listOf(Color.Transparent, BackdropBottom.copy(alpha = 0.88f)))))
             CinemaControls(
                 state = state,
@@ -259,9 +268,14 @@ internal fun CinemaPlayerScreen(
                 portrait = portrait,
                 television = television,
                 controlsFocusable = !keepFocusInDrawer && !keepFocusInMore,
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .then(controlInsets)
-                    .padding(horizontal = inset, vertical = bottom)
+                modifier = Modifier.align(Alignment.BottomCenter).then(controlInsets).then(
+                    if (portrait) {
+                        portraitWidth.onSizeChanged(onSizeChanged = { size -> portraitControlsHeight = size.height })
+                            .padding(vertical = bottom)
+                    } else {
+                        Modifier.fillMaxWidth().padding(horizontal = inset, vertical = bottom)
+                    }
+                )
             )
             when (visiblePanel) {
                 TvPanel.Controls -> Unit
@@ -270,13 +284,14 @@ internal fun CinemaPlayerScreen(
                         state = state,
                         channels = groups[activeGroup].orEmpty(),
                         onSelect = viewModel::select,
+                        onGuide = onGuide,
                         onChannelFocused = { channel ->
                             navigatingGroups = false
                             browsedChannelId = channel.id
                         },
                         modifier = if (portrait) {
-                            Modifier.align(Alignment.BottomCenter).then(controlInsets).padding(start = inset, end = inset, bottom = 116.dp)
-                                .fillMaxWidth().fillMaxHeight(0.46f)
+                            Modifier.align(Alignment.BottomCenter).then(controlInsets).then(portraitWidth)
+                                .padding(bottom = portraitBottom).fillMaxHeight(0.46f)
                         } else {
                             Modifier.align(Alignment.TopStart).then(controlInsets).padding(start = inset, top = 24.dp, bottom = if (television) 86.dp else 76.dp)
                                 .width(minOf(248.dp, maxWidth * 0.40f)).fillMaxHeight()
@@ -330,7 +345,10 @@ internal fun CinemaPlayerScreen(
                     restoreSettings = returnToSettings,
                     onClose = dismiss,
                     onSources = {
-                        panel = TvPanel.Controls
+                        returnToSettings = false
+                        if (!television) {
+                            panel = TvPanel.Controls
+                        }
                         onSources()
                     },
                     onSettings = {
@@ -339,7 +357,8 @@ internal fun CinemaPlayerScreen(
                     },
                     modifier = Modifier.align(if (portrait) Alignment.BottomCenter else Alignment.BottomEnd)
                         .then(controlInsets)
-                        .padding(end = if (portrait) 0.dp else inset, top = 24.dp, bottom = if (portrait) 116.dp else if (television) 84.dp else 78.dp)
+                        .padding(end = if (portrait) 0.dp else inset, top = 24.dp,
+                            bottom = if (portrait) portraitBottom else if (television) 84.dp else 78.dp)
                         .width(minOf(if (television) 276.dp else 300.dp, maxWidth - inset * 2))
                 )
             }
@@ -347,6 +366,7 @@ internal fun CinemaPlayerScreen(
     })
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CinemaControls(
     state: PlayerState,
@@ -370,56 +390,63 @@ private fun CinemaControls(
             }
         })
     }
-    val actions: @Composable () -> Unit = {
-        Row(
-            modifier = (if (portrait) Modifier.fillMaxWidth() else Modifier)
-                .background(BackdropBottom.copy(alpha = 0.68f), RoundedCornerShape(12.dp)).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = {
-                val actionWidth = if (portrait) Modifier.weight(1f) else Modifier
-                CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels,
-                    modifier = actionWidth.focusRequester(channelsFocus).onPreviewKeyEvent(onPreviewKeyEvent = { event ->
-                        val native = event.nativeKeyEvent
-                        if (television && native.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                            if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
-                                onChannels()
-                            }
-                            true
-                        } else {
-                            false
-                        }
-                    }), interactive = controlsFocusable)
-                if (state.channels.isNotEmpty()) {
-                    CinemaPlaybackAction(viewModel = viewModel, initialPlayback = state.playback,
-                        modifier = actionWidth, interactive = controlsFocusable)
+    val actionBackground = Modifier.background(BackdropBottom.copy(alpha = 0.68f), RoundedCornerShape(12.dp))
+        .padding(horizontal = 4.dp)
+    val actions: @Composable (Modifier, Dp) -> Unit = { actionWidth, horizontalPadding ->
+        CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels,
+            modifier = actionWidth.focusRequester(channelsFocus).onPreviewKeyEvent(onPreviewKeyEvent = { event ->
+                val native = event.nativeKeyEvent
+                if (television && native.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                    if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
+                        onChannels()
+                    }
+                    true
+                } else {
+                    false
                 }
-                if (state.selectedId != null) {
-                    val favorite = state.selectedId in state.favoriteIds
-                    CinemaAction(label = stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add),
-                        icon = if (favorite) R.drawable.ic_star_filled else R.drawable.ic_star,
-                        tint = if (favorite) Gold else Accent, onClick = viewModel::toggleCurrentFavorite,
-                        modifier = actionWidth, interactive = controlsFocusable)
-                }
-                CinemaAction(label = stringResource(R.string.tv_more), onClick = onMore,
-                    modifier = actionWidth.focusRequester(moreFocus), interactive = controlsFocusable)
-            }
-        )
+            }), interactive = controlsFocusable, horizontalPadding = horizontalPadding)
+        if (state.channels.isNotEmpty()) {
+            CinemaPlaybackAction(viewModel = viewModel, initialPlayback = state.playback,
+                modifier = actionWidth, interactive = controlsFocusable, horizontalPadding = horizontalPadding)
+        }
+        if (state.selectedId != null) {
+            val favorite = state.selectedId in state.favoriteIds
+            CinemaAction(label = stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add),
+                icon = if (favorite) R.drawable.ic_star_filled else R.drawable.ic_star,
+                tint = if (favorite) Gold else Accent, onClick = viewModel::toggleCurrentFavorite,
+                modifier = actionWidth, interactive = controlsFocusable, horizontalPadding = horizontalPadding)
+        }
+        CinemaAction(label = stringResource(R.string.tv_more), onClick = onMore,
+            modifier = actionWidth.focusRequester(moreFocus), interactive = controlsFocusable,
+            horizontalPadding = horizontalPadding)
     }
     if (portrait) {
         Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp), content = {
             channelName(Modifier)
-            actions()
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth().then(actionBackground), content = {
+                val actionCount = 2 + (if (state.channels.isNotEmpty()) 1 else 0) + (if (state.selectedId != null) 1 else 0)
+                val availableColumns = (maxWidth / 48.dp).toInt().coerceAtLeast(1)
+                val columns = if (availableColumns >= actionCount) actionCount else minOf(2, availableColumns)
+                val actionWidth = with(LocalDensity.current) { (maxWidth.toPx() / columns).toInt().toDp() }
+                val actionPadding = if (maxWidth < 330.dp) 6.dp else 12.dp
+                FlowRow(horizontalArrangement = Arrangement.Center, maxItemsInEachRow = columns, content = {
+                    actions(Modifier.width(actionWidth).height(48.dp), actionPadding)
+                })
+            })
         })
     } else {
         Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
             channelName(Modifier.weight(1f))
-            actions()
+            Row(modifier = actionBackground, verticalAlignment = Alignment.CenterVertically, content = {
+                actions(Modifier, 12.dp)
+            })
         })
     }
 }
 
 @Composable
-private fun CinemaPlaybackAction(viewModel: PlayerViewModel, initialPlayback: PlaybackStatus, modifier: Modifier, interactive: Boolean): Unit {
+private fun CinemaPlaybackAction(viewModel: PlayerViewModel, initialPlayback: PlaybackStatus, modifier: Modifier,
+    interactive: Boolean, horizontalPadding: Dp): Unit {
     val playbackFlow = remember(viewModel, calculation = {
         viewModel.state.map(transform = { state -> state.playback }).distinctUntilChanged()
     })
@@ -436,6 +463,7 @@ private fun CinemaPlaybackAction(viewModel: PlayerViewModel, initialPlayback: Pl
         icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play,
         onClick = viewModel::togglePlayback,
         modifier = modifier,
-        interactive = interactive
+        interactive = interactive,
+        horizontalPadding = horizontalPadding
     )
 }

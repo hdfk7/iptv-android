@@ -32,6 +32,7 @@ import cn.hdfk7.android.iptv.core.ui.theme.PanelAlt
 @Composable
 internal fun PlaybackSurface(
     state: PlayerState,
+    fillVideoScreen: Boolean,
     showPlaybackStatus: Boolean,
     onPlay: (() -> Unit)?,
     modifier: Modifier
@@ -43,7 +44,7 @@ internal fun PlaybackSurface(
                 bitmap = remember(cachedFrame, calculation = { cachedFrame.asImageBitmap() }),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize().background(Color.Black),
-                contentScale = ContentScale.Fit
+                contentScale = if (fillVideoScreen) ContentScale.Crop else ContentScale.Fit
             )
         }
         val showPicture = state.previewFrameVisible || cachedFrame != null

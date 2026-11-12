@@ -75,6 +75,7 @@ private fun installedVersion(context: Context): Long {
 @Composable
 fun AppUpdateDialog(onClose: () -> Unit): Unit {
     val context = LocalContext.current
+    val store = remember(context, calculation = { AppUpdateStore(context.applicationContext) })
     val address = BuildConfig.APP_UPDATE_MANIFEST_URL
     val scope = rememberCoroutineScope()
     var checkAttempt by remember(calculation = { mutableIntStateOf(0) })
@@ -132,6 +133,7 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult(), onResult = { _ ->
+        store.clearAuthorizing()
         needsPermission = !context.packageManager.canRequestPackageInstalls()
         actionMessage = if (needsPermission) R.string.app_update_permission_not_granted else R.string.app_update_permission_granted
     })
@@ -139,17 +141,47 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         if (context.packageManager.canRequestPackageInstalls()) {
             needsPermission = false
             actionMessage = R.string.app_update_permission_granted
-        } else {
+        } else if (store.markAuthorizing()) {
             try {
                 permission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()))
             } catch (_: RuntimeException) {
+                store.clearAuthorizing()
                 actionMessage = R.string.app_update_permission_settings_unavailable
             }
+        } else {
+            actionMessage = R.string.app_update_save_failed
         }
     }
     LaunchedEffect(key1 = address, key2 = checkAttempt, block = {
         result = null
         actionMessage = null
+        if (checkAttempt == 0) {
+            val saved = withContext(context = Dispatchers.IO, block = {
+                val release = store.pendingRelease()
+                if (release == null) {
+                    if (store.apk.exists()) {
+                        store.discard()
+                    }
+                    null
+                } else {
+                    try {
+                        validateUpdateApk(context, store.apk, release)
+                        release
+                    } catch (_: AppUpdateDownloadException) {
+                        store.discard()
+                        null
+                    }
+                }
+            })
+            store.clearAuthorizing()
+            if (saved != null) {
+                result = Result.success(saved)
+                downloadedApk = store.apk
+                needsPermission = !context.packageManager.canRequestPackageInstalls()
+                actionMessage = if (needsPermission) R.string.app_update_allow_install else R.string.app_update_download_ready
+                return@LaunchedEffect
+            }
+        }
         if (address.isNotBlank()) {
             result = withContext(context = Dispatchers.IO, block = {
                 try {

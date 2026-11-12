@@ -135,13 +135,16 @@
     <string name="previous_line">上一条线路</string>
     <string name="next_line">下一条线路</string>
     <string name="retry_current_line">重连当前线路</string>
-    <string name="resume_enabled">启动频道 · 上次观看</string>
-    <string name="resume_disabled">启动频道 · 列表首个</string>
+    <string name="startup_channel">启动频道</string>
+    <string name="startup_channel_last">上次观看</string>
+    <string name="fill_video_screen">视频铺满屏幕</string>
+    <string name="startup_channel_first">列表首个</string>
     <string name="programme_current">正在播 · %1$s</string>
     <string name="programme_next">接下来 · %1$s</string>
     <string name="recent_channels">最近</string>
     <string name="source_guide_address">XMLTV 地址（选填）</string>
     <string name="source_guide_address_error">请输入有效的 HTTP 或 HTTPS 节目表地址</string>
     <string name="guide_title">%1$s · 今日节目单</string>
+    <string name="guide_action">节目单</string>
     <string name="guide_empty">暂无今日节目表</string>
 </resources>

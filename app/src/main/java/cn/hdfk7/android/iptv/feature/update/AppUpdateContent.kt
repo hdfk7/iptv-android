@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import cn.hdfk7.android.iptv.R
+import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.tvDirections
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
@@ -63,7 +64,7 @@ internal fun AppUpdateContent(
                 .background(DialogSurface, RoundedCornerShape(22.dp)).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = {
-                Text(text = stringResource(R.string.app_update_title), color = Color.White, fontSize = 22.sp)
+                DialogTitle(text = stringResource(R.string.app_update_title))
                 Column(
                     modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -76,9 +77,10 @@ internal fun AppUpdateContent(
                                 for (line in notes.lineSequence().map(transform = String::trim).filter(predicate = String::isNotEmpty)) {
                                     if (line.startsWith("• ") || line.startsWith("- ")) {
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
-                                            Text(text = "•", color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                                            Text(text = "•", color = Muted, fontSize = 14.sp, lineHeight = 21.sp,
+                                                modifier = Modifier.alignByBaseline())
                                             Text(text = line.drop(2).trimStart(), color = Muted, fontSize = 14.sp,
-                                                lineHeight = 21.sp, modifier = Modifier.weight(1f))
+                                                lineHeight = 21.sp, modifier = Modifier.weight(1f).alignByBaseline())
                                         })
                                     } else {
                                         Text(text = line, color = Muted, fontSize = 14.sp, lineHeight = 21.sp)

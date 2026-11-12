@@ -2,6 +2,7 @@ package cn.hdfk7.android.iptv.feature.player
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.gestures.scrollBy
@@ -58,9 +59,17 @@ internal class ChannelListFocus {
     val requesters = mutableStateMapOf<String, FocusRequester>()
     var restoreRequest: Long by mutableLongStateOf(0L)
         private set
+    private var returnToId: String? = null
 
-    fun restore(): Unit {
+    fun restore(channelId: String? = null): Unit {
+        returnToId = channelId
         restoreRequest += 1L
+    }
+
+    fun takeReturnTarget(): String? {
+        val channelId = returnToId
+        returnToId = null
+        return channelId
     }
 }
 
@@ -70,6 +79,7 @@ internal fun ChannelPanel(
     state: PlayerState,
     channels: List<Channel>,
     onSelect: (Channel) -> Unit,
+    onGuide: (String) -> Unit,
     modifier: Modifier,
     television: Boolean,
     selectedRowFocus: ChannelListFocus,
@@ -115,7 +125,7 @@ internal fun ChannelPanel(
     }
     LaunchedEffect(requestDrawerFocus, groupKey, channels.isNotEmpty(), selectedRowFocus.restoreRequest, block = {
         if (requestDrawerFocus && channels.isNotEmpty()) {
-            val target = channelFocusTarget(channels, state.selectedId)
+            val target = channelFocusTarget(channels, state.selectedId, selectedRowFocus.takeReturnTarget())
             reveal(target)
         }
     })
@@ -200,6 +210,11 @@ internal fun ChannelPanel(
                                 highlighted = { focusedChannelId == channel.id },
                                 selectedRowFocus = selectedRowFocus,
                                 onRight = onRight,
+                                onGuide = if (!television && channel.guideRefs.isNotEmpty()) {
+                                    { onGuide(channel.id) }
+                                } else {
+                                    null
+                                },
                                 onLeftToHeader = onLeftToHeader,
                                 onFocused = {
                                     focusedChannelId = channel.id
@@ -255,6 +270,7 @@ private fun ChannelRow(
     highlighted: () -> Boolean,
     selectedRowFocus: ChannelListFocus,
     onRight: () -> Unit,
+    onGuide: (() -> Unit)?,
     onLeftToHeader: () -> Unit,
     onFocused: () -> Unit,
     onSelect: () -> Unit
@@ -268,14 +284,12 @@ private fun ChannelRow(
             }
         })
     })
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), content = {
-        val hasPreview = preview != null
-        val rowHeight = if (hasPreview) {
-            Modifier.heightIn(min = 72.dp)
-        } else {
-            Modifier.height(40.dp)
-        }
-        TvAction(modifier = Modifier.fillMaxWidth().then(rowHeight).tvFocusBackground(focused = highlighted, selected = selected, borderColor = Accent).focusRequester(channelFocus).onPreviewKeyEvent(onPreviewKeyEvent = { event ->
+    val hasPreview = preview != null
+    val rowHeight = if (hasPreview) Modifier.heightIn(min = 72.dp) else Modifier.height(40.dp)
+    val rowModifier = Modifier.fillMaxWidth().then(rowHeight)
+        .tvFocusBackground(focused = highlighted, selected = selected, borderColor = Accent)
+        .focusRequester(channelFocus)
+        .onPreviewKeyEvent(onPreviewKeyEvent = { event ->
             if (event.key == Key.DirectionRight) {
                 if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
                     onRight()
@@ -289,32 +303,47 @@ private fun ChannelRow(
             } else {
                 false
             }
-        }).onFocusChanged(onFocusChanged = { focus ->
+        })
+        .onFocusChanged(onFocusChanged = { focus ->
             if (focus.isFocused) {
                 onFocused()
             }
-        }), onClick = onSelect, containerColor = Color.Transparent, focusHighlight = false, showUnfocusedBorder = false, fitContentHeight = hasPreview, content = {
-            val focused = highlighted()
-            val playing = selected()
-            val titleBaseline = if (hasPreview) Modifier.alignByBaseline() else Modifier
-            Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, modifier = titleBaseline.width(if (television) 34.dp else 28.dp))
-            Column(modifier = titleBaseline.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
-                Text(text = displayName, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, lineHeight = if (hasPreview) 20.sp else androidx.compose.ui.unit.TextUnit.Unspecified, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (preview != null) {
-                    val guideColor = if (focused) FocusInk.copy(alpha = 0.75f) else Muted
-                    preview.current?.let(block = { title ->
-                        Text(text = stringResource(R.string.programme_current, title), color = guideColor, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    })
-                    preview.next?.let(block = { title ->
-                        Text(text = stringResource(R.string.programme_next, title), color = guideColor, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    })
-                }
-            })
-            if (playing) {
-                Box(modifier = Modifier.size(6.dp).background(FocusBorder, androidx.compose.foundation.shape.CircleShape))
+        })
+    val rowContent: @Composable RowScope.() -> Unit = {
+        val focused = highlighted()
+        val playing = selected()
+        val titleBaseline = if (hasPreview) Modifier.alignByBaseline() else Modifier
+        Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, modifier = titleBaseline.width(if (television) 34.dp else 28.dp))
+        Column(modifier = titleBaseline.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
+            Text(text = displayName, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, lineHeight = if (hasPreview) 20.sp else androidx.compose.ui.unit.TextUnit.Unspecified, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (preview != null) {
+                val guideColor = if (focused) FocusInk.copy(alpha = 0.75f) else Muted
+                preview.current?.let(block = { title ->
+                    Text(text = stringResource(R.string.programme_current, title), color = guideColor, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                })
+                preview.next?.let(block = { title ->
+                    Text(text = stringResource(R.string.programme_next, title), color = guideColor, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                })
             }
         })
-    })
+        if (playing) {
+            Box(modifier = Modifier.size(6.dp).background(FocusBorder, androidx.compose.foundation.shape.CircleShape))
+        }
+    }
+    if (television) {
+        TvAction(modifier = rowModifier, onClick = onSelect, containerColor = Color.Transparent,
+            focusHighlight = false, showUnfocusedBorder = false, fitContentHeight = hasPreview, content = rowContent)
+    } else {
+        Row(
+            modifier = rowModifier.clip(RoundedCornerShape(FocusCornerRadius)).combinedClickable(
+                onClick = onSelect,
+                onLongClick = onGuide,
+                onLongClickLabel = if (onGuide != null) stringResource(R.string.guide_action) else null
+            ).padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = rowContent
+        )
+    }
 }
 
 @Composable

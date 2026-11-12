@@ -79,6 +79,14 @@ class PlaybackLineRankingTests {
     }
 
     @Test
+    fun fasterStableLineOutranksMuchSlowerHighResolutionLine(): Unit {
+        val ranking = PlaybackLineRanking()
+        ranking.record("program", "first", LineQuality(width = 3840, height = 2160, startupMs = 4700, playedMs = 10_000))
+        ranking.record("program", "second", LineQuality(width = 1920, height = 1080, startupMs = 700, playedMs = 10_000))
+        assertEquals("second", ranking.lines("program", urls).first().url)
+    }
+
+    @Test
     fun bufferingAndDecoderDropsDemoteHigherResolution(): Unit {
         for (poor in listOf(
             LineQuality(width = 3840, height = 2160, playedMs = 10_000, stalledMs = 5000),

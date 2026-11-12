@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import cn.hdfk7.android.iptv.core.model.Channel
 import cn.hdfk7.android.iptv.core.model.PlaylistSource
 import cn.hdfk7.android.iptv.core.model.SourceLibrary
-import cn.hdfk7.android.iptv.core.model.PlaybackLine
 import cn.hdfk7.android.iptv.core.model.ProgrammePreview
 import cn.hdfk7.android.iptv.core.model.Programme
 
@@ -31,7 +30,6 @@ data class PlayerState(
     val cachedPreviewFrame: Bitmap? = null,
     val line: Int = 0,
     val lineCount: Int = 0,
-    val lines: List<PlaybackLine> = emptyList(),
     val fixedVolume: Boolean = false,
     val infoVisible: Boolean = false,
     val message: Int? = null
