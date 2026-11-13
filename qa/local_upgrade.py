@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from release_ui import Device, PACKAGE, bounds, find, release_artifact, verify_installed
-from upgrade_seed import find_source, open_app, seed
+from upgrade_seed import close_panels, find_source, open_app, seed
 
 
 OUTPUT = Path("app/build/outputs/qa/local-upgrade")
@@ -34,6 +34,7 @@ def apk_identity(apk, tools):
 
 def snapshot(device, stage, seed_url=None):
     open_app(device)
+    close_panels(device)
     device.more()
     device.menu("源管理")
     root = device.tree()
@@ -48,7 +49,7 @@ def snapshot(device, stage, seed_url=None):
     if seed_url is not None:
         assert find_source(device, "IPTV-QA-Upgrade") is not None, "Temporary subscription is missing"
 
-    device.key("KEYCODE_BACK", "KEYCODE_BACK")
+    close_panels(device)
     if device.device_type == "tv":
         device.key("KEYCODE_DPAD_LEFT", "KEYCODE_DPAD_LEFT")
         device.choose_with_remote("最近", "KEYCODE_DPAD_LEFT")
@@ -88,7 +89,8 @@ def wait_for_ui(device, labels, timeout=90):
 
 def update_action(device, label, node):
     if device.device_type == "tv":
-        device.choose_with_remote(label, "KEYCODE_DPAD_RIGHT", limit=6)
+        direction = "KEYCODE_DPAD_LEFT" if label == "重新下载" else "KEYCODE_DPAD_RIGHT"
+        device.choose_with_remote(label, direction, limit=6)
     else:
         device.tap(node)
 
@@ -97,6 +99,7 @@ def install_in_app(device, expected):
     root = device.tree()
     if find(root, "检查应用更新") is None or find(root, "关闭") is None:
         open_app(device)
+        close_panels(device)
         device.more()
         device.menu("设置")
         if device.device_type == "tv":
@@ -104,6 +107,12 @@ def install_in_app(device, expected):
         else:
             device.click("检查应用更新")
     label, node = wait_for_ui(device, ("确认下载", "去授权", "安装更新"))
+    if label != "确认下载":
+        # The public artifact can be replaced while its versionCode stays the same.
+        redownload = find(device.tree(), "重新下载")
+        if redownload is not None:
+            update_action(device, "重新下载", redownload)
+            label, node = wait_for_ui(device, ("去授权", "安装更新"), timeout=150)
     if label == "确认下载":
         update_action(device, label, node)
         label, node = wait_for_ui(device, ("去授权", "安装更新"), timeout=150)
@@ -127,10 +136,11 @@ def install_in_app(device, expected):
         label, node = wait_for_ui(device, ("安装更新",))
     update_action(device, label, node)
     install_labels = ("INSTALL", "Install", "安装", "继续安装")
-    label, node = wait_for_ui(device, ("已知悉风险", *install_labels))
-    if label == "已知悉风险":
-        device.tap(node)
-        label, node = wait_for_ui(device, install_labels)
+    label, node = wait_for_ui(device, ("已知悉风险", "开发者身份未验证", "安全验证", *install_labels))
+    if label in ("已知悉风险", "开发者身份未验证", "安全验证"):
+        device.key("KEYCODE_BACK")
+        device.key("KEYCODE_HOME")
+        raise AssertionError("OPPO installer requires on-device confirmation; returned to Home")
     if device.device_type == "tv":
         for _ in range(6):
             root = device.tree()
@@ -179,6 +189,8 @@ def main():
     candidate_hash = hashlib.sha256(current_apk.read_bytes()).hexdigest()
     if args.phase == "baseline":
         if args.seed_url:
+            open_app(device)
+            close_panels(device)
             result["temporaryFavoriteAdded"] = seed(device, args.seed_url, args.seed_guide, "IPTV-QA-Upgrade")
         result["before"] = snapshot(device, "before", args.seed_url)
         assert result["before"]["favoriteCount"] > 0, "The old version must contain at least one favorite"

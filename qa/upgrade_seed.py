@@ -39,8 +39,9 @@ def find_source(device, name):
 def seed(device, url, guide, name):
     tv = device.device_type == "tv"
     open_app(device)
-    device.more()
-    device.menu("源管理")
+    if find(device.tree(), "源管理") is None or find(device.tree(), "添加源", "content-desc") is None:
+        device.more()
+        device.menu("源管理")
     existing = find_source(device, name)
     if existing is None and tv:
         device.choose_with_remote("添加源")
@@ -59,10 +60,15 @@ def seed(device, url, guide, name):
         device.click("保存", "content-desc")
     assert find_source(device, name) is not None, "Test subscription was not saved"
 
-    device.key("KEYCODE_BACK", "KEYCODE_BACK")
+    close_panels(device)
     if tv:
-        device.key("KEYCODE_INFO", "KEYCODE_DPAD_RIGHT", "KEYCODE_DPAD_RIGHT")
+        device.key("KEYCODE_INFO")
         highlight = tv_highlight(device)
+        for _ in range(3):
+            if "收藏节目" in highlight or "取消收藏" in highlight:
+                break
+            device.key("KEYCODE_DPAD_RIGHT")
+            highlight = tv_highlight(device)
         assert highlight in (["收藏节目"], ["取消收藏"]), highlight
         if highlight == ["收藏节目"]:
             device.key("KEYCODE_DPAD_CENTER")
@@ -85,6 +91,15 @@ def open_app(device):
     focus = device.shell("dumpsys", "window").partition("mCurrentFocus=")[2].partition("\n")[0]
     if PACKAGE not in focus:
         device.start()
+
+
+def close_panels(device):
+    for _ in range(4):
+        root = device.tree()
+        labels = ("源管理", "检查应用更新", "HTTP 代理", "频道")
+        if not any(find(root, label) is not None for label in labels):
+            return
+        device.key("KEYCODE_BACK")
 
 
 if __name__ == "__main__":

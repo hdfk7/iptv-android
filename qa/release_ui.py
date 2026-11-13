@@ -36,8 +36,14 @@ class Device:
         self.input("keyevent", *keys)
 
     def tree(self):
-        self.shell("uiautomator", "dump", REMOTE_XML)
-        return ET.fromstring(self.shell("cat", REMOTE_XML))
+        for attempt in range(3):
+            try:
+                self.shell("uiautomator", "dump", REMOTE_XML)
+                return ET.fromstring(self.shell("cat", REMOTE_XML))
+            except (subprocess.CalledProcessError, ET.ParseError):
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
 
     def tap(self, node):
         left, top, right, bottom = bounds(node)
