@@ -16,12 +16,28 @@ PREVIEW = re.compile(r"preview_copies=(\d+) preview_ms=(\d+) standby=false previ
 
 
 def parse_tunes(log):
-    return {int(tune_id or failed_id): {
-        "first_frame_ms": int(latency) if latency else None,
-        "recovery_ms": int(recovery) if recovery else None,
-        "first_line": first_line == "true",
-        "status": "success" if latency else "failed",
-    } for latency, recovery, first_line, tune_id, failed_id in EVENT.findall(log)}
+    events = {}
+    for latency, recovery, first_line, tune_id, failed_id in EVENT.findall(log):
+        if tune_id:
+            # A later attempt can also render within the same tune.
+            events.setdefault(int(tune_id), {
+                "first_frame_ms": int(latency),
+                "recovery_ms": int(recovery),
+                "first_line": first_line == "true",
+                "status": "success",
+                "failed_after_first_frame": False,
+            })
+        else:
+            event = events.setdefault(int(failed_id), {
+                "first_frame_ms": None,
+                "recovery_ms": None,
+                "first_line": False,
+                "status": "failed",
+                "failed_after_first_frame": False,
+            })
+            if event["status"] == "success":
+                event["failed_after_first_frame"] = True
+    return events
 
 
 def summarize(values):
@@ -86,6 +102,7 @@ def measure(serial, rounds, timeout, device_type="tv"):
         if index >= warmup:
             tune_id, event = tune or (None, {
                 "first_frame_ms": None, "recovery_ms": None, "first_line": False, "status": "timeout",
+                "failed_after_first_frame": False,
             })
             samples.append({"direction": direction, "tune_id": tune_id, **event})
         if (index + 1) % 10 == 0:
@@ -94,9 +111,14 @@ def measure(serial, rounds, timeout, device_type="tv"):
     # The preview scan can finish after the first-frame event.
     time.sleep(2.2)
     previews = {}
-    for copies, duration, tune_id in PREVIEW.findall(read_log()):
+    final_log = read_log()
+    final_events = parse_tunes(final_log)
+    for copies, duration, tune_id in PREVIEW.findall(final_log):
         previews.setdefault(int(tune_id), []).append((int(copies), int(duration)))
     for row in samples:
+        event = final_events.get(row["tune_id"])
+        if event and row["status"] == "success":
+            row["failed_after_first_frame"] |= event["failed_after_first_frame"]
         captures = previews.get(row["tune_id"], [])
         row["preview_copies"] = sum(copies for copies, _ in captures) if captures else None
         row["preview_ms"] = sum(duration for _, duration in captures) if captures else None
@@ -113,6 +135,7 @@ def measure(serial, rounds, timeout, device_type="tv"):
         "successes": len(successful),
         "failed": sum(row["status"] == "failed" for row in samples),
         "timeouts": sum(row["status"] == "timeout" for row in samples),
+        "failures_after_first_frame": sum(row["failed_after_first_frame"] for row in samples),
         **summarize(successful),
         "first_line_successes": first_line,
         "first_line_success_rate": first_line / rounds,

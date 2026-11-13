@@ -52,7 +52,7 @@ python -B qa/local_upgrade.py --phase upgrade @upgrade --new-apk $newApk
 
 ## 6. 新版功能和界面回归
 
-使用同一候选 APK 跑完回归。设置 `IPTV_QA_APK` 为已核验的本轮实际分发 APK 路径。若与本地发布产物哈希不一致，先查清下载、上传或缓存问题，不换一个文件路径掩盖不一致。通过正常界面或旋转手机切换方向。TV 导航用 App 选好含多频道和分组的源。下面列出各设备命令；手机和 TV 各自按顺序执行，两台并行，不在同一设备叠加脚本：
+使用同一候选 APK 跑完回归。设置 `IPTV_QA_APK` 为已核验的本轮实际分发 APK 路径。若与本地发布产物哈希不一致，先查清下载、上传或缓存问题，不换一个文件路径掩盖不一致。通过正常界面、物理旋转或下文的 ADB 方法切换手机方向。TV 导航用 App 选好含多频道和分组的源。下面列出各设备命令；手机和 TV 各自按顺序执行，两台并行，不在同一设备叠加脚本：
 
 ```powershell
 python -B qa/release_ui.py --device phone --serial $phone --orientation portrait
@@ -73,6 +73,18 @@ python -B qa/controlled_ui.py --phase hls --device tv --serial $tv
 | 更新与键盘 | 核对当前版本、版本说明、下载进度、取消和重试、安装授权、返回后的下载包恢复、安装成功/取消/失败。下载期间点弹窗外部不关闭或取消；取消按钮和返回键保持原行为。安全键盘通过系统状态或真机实际输入确认，不能凭截图缺失判失败。 |
 
 两端并行运行 `controlled_ui.py --phase proxy-guide --device phone|tv --serial <序列号>`。检查代理及源站请求，核对跨入当天的节目从 00:00 显示、跨到次日的节目保留，以及当前和下一节目。手机从最近任务划掉 IPTV，TV 经系统应用详情停止 IPTV，再从桌面打开。运行 `controlled_ui.py --phase after-restart --device phone|tv --serial <序列号> --old-pid <之前输出的PID>` 验证冷启动、代理配置保留及新请求。表格中其余项目逐条走界面。代理测试前通过 App 关闭代理；复测已有表单时替换原值，不能追加。跨午夜夹具按各设备的日期和时区生成，不修改系统时间。两个设备同时测试时不得切换共享服务器故障模式影响另一台；503 故障场景共同进入、共同恢复，其他场景保持正常模式。
+
+### 手机横屏和自动旋转恢复
+
+远程测试可通过 ADB 临时切换手机方向。先记录当前旋转模式和方向，并记录系统是否忽略应用的方向请求。
+
+    adb -s $phone shell wm user-rotation
+    adb -s $phone shell settings get system user_rotation
+    adb -s $phone shell wm get-ignore-orientation-request
+
+执行 `adb -s $phone shell wm user-rotation lock 1` 请求横屏。OPPO PEPM00 的系统安装器可能锁定竖屏，如果画面仍未旋转，再临时执行 `adb -s $phone shell wm set-ignore-orientation-request true`。通过窗口状态的 `mRotation` 及截图或 UI 树宽高确认实际进入横屏，再继续安装器返回等用例。
+
+用例完成、中止或失败后都要恢复记录的值。原模式为 `free` 时执行 `adb -s $phone shell wm user-rotation free`。原模式为锁定时用 `adb -s $phone shell wm user-rotation lock <原方向>` 恢复。若改过忽略方向请求的设置，用 `adb -s $phone shell wm set-ignore-orientation-request <原布尔值>` 恢复，再读回两项设置核对。本次 PEPM00 的原设置为 `free` 和 `false`。
 
 ### 版本差异规则
 
@@ -103,4 +115,4 @@ python -B -m unittest discover -s qa/tests -p "test_*.py"
 
 停止本轮测试服务，并撤销本轮建立的端口转发。执行 `python -B qa/cleanup.py --phone $phone --tv $tv --new-apk $newApk`。脚本检查两台的最新包、默认订阅、空收藏及代理关闭，清理设备临时 UI 树和主机临时目录里的截图、视频、日志及检查点。核验完成后，按本轮记录的准确路径删除主机上生成的新旧 APK 和其他临时测试产物。设备公共下载目录如有本轮产生的 IPTV APK，先核对准确路径再删除；不删除其他应用文件。清理时不保留主机新旧 APK，也不保留测试截图或录像，最终只保留两台已安装的新版 App。源码、QA 文档和脚本属于项目文件，保留。最终结论在会话中汇报。
 
-可选的换台耗时测试使用单独的性能环境和启用 `APP_DEBUG_SWITCH` 的签名 Release。用夹具服务的 `/tune.m3u` 通过 App 添加订阅并选中其中一个频道，运行 `python -B qa/release_tune.py --device phone|tv --serial <序列号> --rounds 40`。对比前后版本时复用同一设备、信号和线路历史初始状态。报告记录签名 APK 的 SHA-256、换台首帧 P50/P95、首条线路成功率、恢复耗时、失败和超时次数，以及预览截图次数和耗时。线路排序可能在预热后将备用线路提升为首条，恢复样本按实际日志计数。
+可选的换台耗时测试使用单独的性能环境和启用 `APP_DEBUG_SWITCH` 的签名 Release。用夹具服务的 `/tune.m3u` 通过 App 添加订阅并选中其中一个频道，运行 `python -B qa/release_tune.py --device phone|tv --serial <序列号> --rounds 40`。对比前后版本时复用同一设备、信号和线路历史初始状态。报告记录签名 APK 的 SHA-256、换台首帧 P50/P95、首条线路成功率、恢复耗时、首帧前失败和超时次数、首帧后失败次数，以及预览截图次数和耗时。线路排序可能在预热后将备用线路提升为首条，恢复样本按实际日志计数。

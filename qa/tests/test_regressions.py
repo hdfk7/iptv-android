@@ -91,9 +91,17 @@ class UiRegressionTests(unittest.TestCase):
     def test_tune_measurement_distinguishes_recovery_and_failure(self):
         events = parse_tunes("first_frame_ms=50 tune_ms=90 recovery_ms=30 first_line=false tune_id=5\n"
                              "tune_failed_id=6")
-        self.assertEqual(events[5], {"first_frame_ms": 90, "recovery_ms": 30, "first_line": False, "status": "success"})
+        self.assertEqual(events[5], {"first_frame_ms": 90, "recovery_ms": 30, "first_line": False,
+                                     "status": "success", "failed_after_first_frame": False})
         self.assertEqual(events[6]["status"], "failed")
         self.assertEqual(summarize([90, 30, 50]), {"p50_ms": 50, "p95_ms": 90, "max_ms": 90})
+
+    def test_tune_preserves_first_frame_after_later_frames_and_failure(self):
+        events = parse_tunes("first_frame_ms=80 tune_ms=80 recovery_ms=0 first_line=true tune_id=7\n"
+                             "first_frame_ms=200 tune_ms=350 recovery_ms=240 first_line=false tune_id=7\n"
+                             "tune_failed_id=7 lines_tried=2")
+        self.assertEqual(events[7], {"first_frame_ms": 80, "recovery_ms": 0, "first_line": True,
+                                     "status": "success", "failed_after_first_frame": True})
 
     def test_flat_guide_matches_adjacent_cells_on_the_same_row(self):
         root = ET.fromstring("""<hierarchy><node>
