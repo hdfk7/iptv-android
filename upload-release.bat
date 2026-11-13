@@ -84,7 +84,15 @@ if errorlevel 1 (
 )
 
 set "STAGE="
-for /f "delims=" %%d in ('ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && mktemp -d .release-upload.XXXXXXXX"') do set "STAGE=%%d"
+set "STAGE_FILE=%TEMP%\iptv-release-stage-%RANDOM%-%RANDOM%.txt"
+ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && mktemp -d .release-upload.XXXXXXXX" > "%STAGE_FILE%"
+if errorlevel 1 (
+    del "%STAGE_FILE%" >nul 2>nul
+    echo [error] could not create staging directory
+    exit /b 1
+)
+set /p "STAGE="<"%STAGE_FILE%"
+del "%STAGE_FILE%" >nul 2>nul
 if not defined STAGE (
     echo [error] could not create staging directory
     exit /b 1
