@@ -12,7 +12,7 @@ python qa/tv_navigation.py --serial <TV序列号>
 python qa/tv_exit.py --serial <TV序列号>
 ```
 
-使用当前签名 Release 和原包名覆盖安装，核对 `versionName`、`versionCode` 和设备 APK 的 SHA-256。产物位于 `app/build/outputs/qa`。记录设备型号、Android 版本、APK 及通过、失败或待验证结果。手机横竖屏检查后恢复原旋转设置。TV 用遥控按键操作；检查实际高亮、确认动作和返回位置。实体电视与模拟器分别记录。
+先通过安装界面准备当前签名 Release。脚本核对 `versionName`、`versionCode` 和设备 APK 的 SHA-256。产物位于 `app/build/outputs/qa`。记录设备型号、Android 版本、APK 及通过、失败或待验证结果。手机横竖屏检查后恢复原旋转设置。TV 用遥控按键操作；检查实际高亮、确认动作和返回位置。实体电视与模拟器分别记录。
 
 | 场景 | 验收 |
 | --- | --- |
@@ -24,34 +24,28 @@ python qa/tv_exit.py --serial <TV序列号>
 | 代理和安全键盘 | 用可恢复的测试值保存代理配置，重启核对后恢复。OPPO 安全键盘用系统输入法状态或真机实际输入确认。受保护的截图不用于判断键盘是否打开，无法确认时记录待验证。 |
 | 更新检查 | 检查当前版本状态和版本说明。只有更高版本清单和同签名 APK 可用时，才可覆盖应用内下载、系统授权和安装。 |
 
-## 本地覆盖升级
+## 旧版数据基线和应用内升级
 
 在 TV 和手机分别运行，使用同包名、同签名且 `versionCode` 更低的旧版正式包。先准备可见订阅与最近观看。要验证非空收藏，在测试设备上先保留至少一条可识别的测试收藏。
 
 ```powershell
-python qa/local_upgrade.py --device phone --serial <手机序列号> --old-apk <旧版APK> --build-tools <BuildTools目录>
-python qa/local_upgrade.py --device tv --serial <TV序列号> --old-apk <旧版APK> --build-tools <BuildTools目录>
+python qa/local_upgrade.py --phase baseline --device phone --serial <手机序列号> --old-apk <旧版APK> --build-tools <BuildTools目录>
+python qa/local_upgrade.py --phase baseline --device tv --serial <TV序列号> --old-apk <旧版APK> --build-tools <BuildTools目录>
 ```
 
-设备已经安装较新正式包时，可在允许测试降级的设备上显式加 `--allow-downgrade`。系统拒绝降级时保留现有安装和数据。脚本核对 APK 签名、版本和哈希，并对比升级前后的可见订阅、收藏数量和最近观看；核对非空收藏具体内容时还需打开收藏列表确认。结果在 `app/build/outputs/qa/local-upgrade`。本地安装与应用内更新分别记录。
+先通过设备安装界面准备旧版，再运行基线阶段。系统拒绝降级时保留现有安装和数据。脚本只读核对旧包签名、版本和哈希，记录可见订阅、收藏数量和最近观看；还要打开收藏列表确认具体条目。两端基线核对完成后，分别将命令的 `--phase baseline` 改为 `--phase upgrade`。结果在 `app/build/outputs/qa/local-upgrade`。
 
 传入 `--seed-url` 和 `--seed-guide` 可在旧版添加 `IPTV-QA-Upgrade` 测试订阅，并给当前频道添加一条测试收藏。TV 导航使用遥控按键，测试 URL 和名称通过 ADB 输入。升级测试完成后，删除该测试源；如果结果中的 `temporaryFavoriteAdded` 为 true，移除本次新增的收藏。
 
 应用内升级使用配置了测试 HTTPS 清单的同签名旧包。清单指向同签名、更高 `versionCode` 的候选包。从设置进入检查更新，确认下载，按需授权并在系统安装器确认，安装后核对包哈希和原数据。公开渠道验证使用实际分发的旧包和清单。
 
-给 `local_upgrade.py` 加 `--in-app` 走应用内升级。脚本通过触摸、输入框打字和遥控按键创建测试数据并驱动升级界面。ADB 安装仅用于准备旧版基线；新版通过 App 发起下载和系统安装。版本、哈希和系统窗口状态可只读核对。
+脚本通过触摸、输入框打字和遥控按键创建测试数据并驱动升级界面。新版通过 App 发起下载和系统安装。版本、哈希和系统窗口状态可只读核对。系统安装器要求人工验证且现场无人时，退出安装器，记录该设备的升级未完成。
 
 ## 受控播放与节目单
 
 用自行生成的测试 MP4 启动 `qa/fixture_server.py`。服务仅监听电脑的 `127.0.0.1`；用 `adb -s <序列号> reverse tcp:18764 tcp:18764` 转发。使用独立测试源 `http://127.0.0.1:18764/release.m3u` 和 `http://127.0.0.1:18764/release-guide.xml`。将服务切换到 `/control?mode=release-offline` 模拟 503，结束后恢复 `/control?mode=ok`，移除测试源和转发。
 
-`qa/debug_smoke.py` 是独立的调试诊断入口，使用 Debug 应用 ID 测试 404、跨重启缓存、节目单和出画后 HLS 分片停滞。它只在没有 IPTV Debug 包的设备上创建临时安装。正式回归使用上文的 Release 包。
-
-```powershell
-ffmpeg -f lavfi -i testsrc2=size=320x180:rate=25 -t 60 -c:v libx264 -pix_fmt yuv420p -movflags +faststart smoke.mp4
-ffmpeg -i smoke.mp4 -t 5 -c copy -f mpegts smoke.ts
-python qa/debug_smoke.py --serial <ADB序列号> --media smoke.mp4
-```
+HLS 卡顿回归在 App 内添加 `/debug-smoke.m3u` 测试源。服务目录需准备与 MP4 同名的 TS 分片。选择含停滞线路的频道，确认首次出画，随后等待备用线路恢复播放。
 
 ## Release 换台耗时
 

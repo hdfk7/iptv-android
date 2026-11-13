@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-from release_ui import Device, PACKAGE, bounds, find, install_release, release_artifact, verify_installed
-from upgrade_seed import seed
+from release_ui import Device, PACKAGE, bounds, find, release_artifact, verify_installed
+from upgrade_seed import find_source, open_app, seed
 
 
 OUTPUT = Path("app/build/outputs/qa/local-upgrade")
@@ -32,8 +32,8 @@ def apk_identity(apk, tools):
     return package[1], {"versionCode": int(package[2]), "versionName": package[3]}, signers
 
 
-def snapshot(device, stage):
-    device.start()
+def snapshot(device, stage, seed_url=None):
+    open_app(device)
     device.more()
     device.menu("源管理")
     root = device.tree()
@@ -45,8 +45,10 @@ def snapshot(device, stage):
     assert counts, "Favorite count is missing"
     urls = [node.get("text") for node in root.iter("node") if node.get("text", "").startswith(("http://", "https://"))]
     assert urls, "No visible subscriptions to compare"
+    if seed_url is not None:
+        assert find_source(device, "IPTV-QA-Upgrade") is not None, "Temporary subscription is missing"
 
-    device.start()
+    device.key("KEYCODE_BACK", "KEYCODE_BACK")
     if device.device_type == "tv":
         device.key("KEYCODE_DPAD_LEFT", "KEYCODE_DPAD_LEFT")
         device.choose_with_remote("最近", "KEYCODE_DPAD_LEFT")
@@ -62,6 +64,7 @@ def snapshot(device, stage):
               if len(label) == 3 and label.isdecimal()]
     assert recent, "Play a channel on the active source before collecting the baseline"
     device.screenshot(device.device_type, f"upgrade-{stage}-recent")
+    device.key("KEYCODE_BACK")
     source_hashes = [hashlib.sha256(url.encode()).hexdigest() for url in urls]
     return {"visibleSubscriptionHashes": source_hashes, "favoriteCount": int(counts[0]), "visibleRecent": recent}
 
@@ -69,9 +72,15 @@ def snapshot(device, stage):
 def wait_for_ui(device, labels, timeout=90):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        root = device.tree()
+        try:
+            root = device.tree()
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            time.sleep(0.5)
+            continue
         for label in labels:
-            node = find(root, label) or find(root, label, "content-desc")
+            node = find(root, label)
+            if node is None:
+                node = find(root, label, "content-desc")
             if node is not None:
                 return label, node
     raise AssertionError(f"Expected UI did not appear: {labels}")
@@ -85,16 +94,19 @@ def update_action(device, label, node):
 
 
 def install_in_app(device, expected):
-    device.start()
-    device.more()
-    device.menu("设置")
-    if device.device_type == "tv":
-        device.key("KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_CENTER")
-    else:
-        device.click("检查应用更新")
-    label, node = wait_for_ui(device, ("确认下载",))
-    update_action(device, label, node)
-    label, node = wait_for_ui(device, ("去授权", "安装更新"))
+    root = device.tree()
+    if find(root, "检查应用更新") is None or find(root, "关闭") is None:
+        open_app(device)
+        device.more()
+        device.menu("设置")
+        if device.device_type == "tv":
+            device.key("KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_CENTER")
+        else:
+            device.click("检查应用更新")
+    label, node = wait_for_ui(device, ("确认下载", "去授权", "安装更新"))
+    if label == "确认下载":
+        update_action(device, label, node)
+        label, node = wait_for_ui(device, ("去授权", "安装更新"), timeout=150)
     if label == "去授权":
         update_action(device, label, node)
         if device.device_type == "tv":
@@ -114,7 +126,11 @@ def install_in_app(device, expected):
         device.key("KEYCODE_BACK")
         label, node = wait_for_ui(device, ("安装更新",))
     update_action(device, label, node)
-    label, node = wait_for_ui(device, ("INSTALL", "Install", "安装", "继续安装"))
+    install_labels = ("INSTALL", "Install", "安装", "继续安装")
+    label, node = wait_for_ui(device, ("已知悉风险", *install_labels))
+    if label == "已知悉风险":
+        device.tap(node)
+        label, node = wait_for_ui(device, install_labels)
     if device.device_type == "tv":
         for _ in range(6):
             root = device.tree()
@@ -143,11 +159,9 @@ def main():
     parser.add_argument("--device", choices=("phone", "tv"), required=True)
     parser.add_argument("--old-apk", type=Path, required=True)
     parser.add_argument("--build-tools", type=Path, required=True)
-    parser.add_argument("--allow-downgrade", action="store_true",
-                        help="Allow ADB to install the older APK over a newer version on this test device")
+    parser.add_argument("--phase", choices=("baseline", "upgrade"), required=True)
     parser.add_argument("--seed-url", help="Add a temporary test subscription on the old version before the upgrade")
     parser.add_argument("--seed-guide", help="XMLTV address for the temporary test subscription")
-    parser.add_argument("--in-app", action="store_true", help="Download and install from the old app's update screen")
     args = parser.parse_args()
     if bool(args.seed_url) != bool(args.seed_guide):
         parser.error("--seed-url and --seed-guide must be supplied together")
@@ -158,28 +172,28 @@ def main():
         parser.error("Old APK must have the same package and signing certificate and a lower versionCode")
     device = Device(args.serial, args.device)
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    result = {"method": "in-app" if args.in_app else "local", "serial": args.serial, "model": device.shell("getprop", "ro.product.model").strip(),
+    result = {"method": "in-app", "serial": args.serial, "model": device.shell("getprop", "ro.product.model").strip(),
               "android": device.shell("getprop", "ro.build.version.release").strip(), "from": old_entry, "to": new_entry}
-    flags = ["-r", "-d"] if args.allow_downgrade else ["-r"]
-    if b"Success" not in device.adb("install", *flags, str(args.old_apk.resolve())):
-        raise AssertionError("Old APK did not install")
-    def baseline():
-        _, result["oldSha256"] = verify_installed(device, args.old_apk, old_entry)
+    _, result["oldSha256"] = verify_installed(device, args.old_apk, old_entry)
+    baseline_path = OUTPUT / f"{args.device}-baseline.json"
+    candidate_hash = hashlib.sha256(current_apk.read_bytes()).hexdigest()
+    if args.phase == "baseline":
         if args.seed_url:
             result["temporaryFavoriteAdded"] = seed(device, args.seed_url, args.seed_guide, "IPTV-QA-Upgrade")
-        result["before"] = snapshot(device, "before")
-        if args.seed_url:
-            assert result["before"]["favoriteCount"] > 0, "Temporary data must include a nonempty favorites list"
-    if args.in_app:
-        baseline()
-        install_in_app(device, new_entry)
-        _, result["sha256"] = verify_installed(device, current_apk, new_entry)
-    else:
-        try:
-            baseline()
-        finally:
-            _, result["sha256"] = install_release(device)
-    result["after"] = snapshot(device, "after")
+        result["before"] = snapshot(device, "before", args.seed_url)
+        assert result["before"]["favoriteCount"] > 0, "The old version must contain at least one favorite"
+        result["candidateSha256"] = candidate_hash
+        result["seedUrl"] = args.seed_url
+        baseline_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"{args.device}: old-version baseline recorded", flush=True)
+        return
+    result = json.loads(baseline_path.read_text(encoding="utf-8"))
+    assert result["serial"] == args.serial and result["from"] == old_entry and result["to"] == new_entry
+    assert result["candidateSha256"] == candidate_hash, "Collect a new baseline for this release APK"
+    assert result["before"]["favoriteCount"] > 0 and result["before"]["visibleRecent"]
+    install_in_app(device, new_entry)
+    _, result["sha256"] = verify_installed(device, current_apk, new_entry)
+    result["after"] = snapshot(device, "after", result["seedUrl"])
     result["passed"] = result["before"] == result["after"]
     result["nonEmptyFavoritesCovered"] = result["before"]["favoriteCount"] > 0
     (OUTPUT / f"{args.device}-result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

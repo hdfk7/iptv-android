@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from release_ui import Device, PACKAGE, install_release
+from release_ui import Device, PACKAGE, verify_release_apk
 
 
 OUTPUT = Path("app/build/outputs/qa/tv-exit")
@@ -50,7 +50,7 @@ def main():
     parser.add_argument("--serial", required=True)
     args = parser.parse_args()
     device = Device(args.serial, "tv")
-    entry, checksum = install_release(device)
+    entry, checksum = verify_release_apk(device)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     result = {"serial": device.serial, "versionName": entry["versionName"],
               "versionCode": entry["versionCode"], "sha256": checksum, "passed": False}

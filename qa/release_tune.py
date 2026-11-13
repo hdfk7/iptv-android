@@ -1,6 +1,5 @@
 """Measure alternating channel switches in the installed, signed Release APK."""
 import argparse
-import hashlib
 import json
 import math
 import re
@@ -8,8 +7,8 @@ import statistics
 import subprocess
 import time
 from pathlib import Path
+from release_ui import Device, PACKAGE, release_artifact, verify_release_apk
 
-PACKAGE = "cn.hdfk7.android.iptv"
 TAG = "IptvPlayback:D"
 EVENT = re.compile(r"first_frame_ms=\d+ tune_ms=(\d+) recovery_ms=\d+ first_line=(true|false) tune_id=(\d+)|tune_failed_id=(\d+)")
 
@@ -18,14 +17,10 @@ def measure(serial, rounds, timeout):
     def adb(*args):
         return subprocess.check_output(["adb", "-s", serial, *args], timeout=20, text=True, encoding="utf-8")
 
-    apk_dir = Path("app/build/outputs/apk/release")
-    entry = json.loads((apk_dir / "output-metadata.json").read_text(encoding="utf-8"))["elements"][0]
-    apk = apk_dir / entry["outputFile"]
-    installed = adb("shell", "pm", "path", PACKAGE).splitlines()[0].removeprefix("package:")
-    assert adb("shell", "sha256sum", installed).split()[0] == hashlib.sha256(apk.read_bytes()).hexdigest()
-
-    adb("shell", "am", "force-stop", PACKAGE)
-    adb("shell", "am", "start", "-W", "-n", f"{PACKAGE}/cn.hdfk7.android.iptv.app.MainActivity")
+    _, apk = release_artifact()
+    device = Device(serial, "tv")
+    verify_release_apk(device)
+    device.start()
     pid = adb("shell", "pidof", PACKAGE).strip()
 
     def events():

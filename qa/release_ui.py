@@ -1,4 +1,4 @@
-"""Install the signed Release APK and check form layout on an attached Android device."""
+"""Check form layout on a device running the signed Release APK."""
 
 import argparse
 import hashlib
@@ -50,9 +50,19 @@ class Device:
         self.tap(node)
 
     def start(self):
-        self.shell("am", "force-stop", PACKAGE)
-        self.shell("am", "start", "-W", "-n", f"{PACKAGE}/.app.MainActivity")
-        time.sleep(2)
+        self.key("KEYCODE_HOME")
+        if self.device_type == "phone":
+            self.click("IPTV", "content-desc")
+        else:
+            for _ in range(12):
+                root = self.tree()
+                focused = [node for node in root.iter("node") if node.get("focused") == "true"]
+                if any(node.get("content-desc") == "IPTV" or find(node, "IPTV") is not None for node in focused):
+                    self.key("KEYCODE_DPAD_CENTER")
+                    break
+                self.key("KEYCODE_DPAD_RIGHT")
+            else:
+                raise AssertionError("IPTV is not reachable in the launcher row")
 
     def more(self):
         if self.device_type == "tv":
@@ -191,16 +201,14 @@ def verify_installed(device, apk, entry):
     return entry, local_hash
 
 
-def install_release(device):
+def verify_release_apk(device):
     entry, apk = release_artifact()
-    if "Success" not in device.adb("install", "-r", str(apk)).decode("utf-8"):
-        raise AssertionError("Release APK did not install")
     return verify_installed(device, apk, entry)
 
 
 def verify_release(serial, device_type):
     device = Device(serial, device_type)
-    entry, checksum = install_release(device)
+    entry, checksum = verify_release_apk(device)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     result = {"serial": serial, "model": device.shell("getprop", "ro.product.model").strip(),
               "android": device.shell("getprop", "ro.build.version.release").strip(),

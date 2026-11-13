@@ -6,7 +6,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from release_ui import Device, find, install_release as verify_release, tv_highlight
+from release_ui import Device, find, verify_release_apk, tv_highlight
 
 
 OUTPUT = Path("app/build/outputs/qa/tv-navigation")
@@ -140,7 +140,7 @@ def main():
     args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     device = Device(args.serial, "tv")
-    entry, checksum = verify_release(device)
+    entry, checksum = verify_release_apk(device)
     verify_navigation(device)
     (OUTPUT / "result.json").write_text(json.dumps({
         "serial": args.serial,
