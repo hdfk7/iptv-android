@@ -31,8 +31,6 @@ import java.io.IOException
 
 class AppUpdateFileProvider : FileProvider()
 
-internal data class AppRelease(val versionCode: Int, val versionName: String, val downloadUrl: String, val notes: String = "")
-
 private suspend fun readAppRelease(address: String): AppRelease {
     val manifestUrl = address.toHttpUrlOrNull()
     if (manifestUrl == null || !manifestUrl.isHttps || manifestUrl.username.isNotEmpty() || manifestUrl.password.isNotEmpty()) {
@@ -63,13 +61,14 @@ private fun installerIntent(context: Context, apk: File): Intent {
 }
 
 @Suppress("DEPRECATION")
-private fun installedVersion(context: Context): Long {
+private fun isReleaseInstalled(context: Context, release: AppRelease): Boolean {
     val info = context.packageManager.getPackageInfo(context.packageName, 0)
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+    val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         info.longVersionCode
     } else {
         info.versionCode.toLong()
     }
+    return !release.differsFrom(code, info.versionName)
 }
 
 @Composable
@@ -92,12 +91,12 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     var installing by remember(calculation = { mutableStateOf(false) })
     var savingAuthorization by remember(calculation = { mutableStateOf(false) })
     val latest = result?.getOrNull()
-    val update = latest?.takeIf(predicate = { release -> release.versionCode > BuildConfig.VERSION_CODE })
+    val update = latest?.takeIf(predicate = { release -> release.differsFrom(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME) })
     val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult(), onResult = { outcome ->
         installing = false
-        val expectedVersion = update?.versionCode
+        val expectedRelease = update
         actionMessage = when {
-            expectedVersion != null && installedVersion(context) >= expectedVersion -> R.string.app_update_install_complete
+            expectedRelease != null && isReleaseInstalled(context, expectedRelease) -> R.string.app_update_install_complete
             outcome.resultCode == Activity.RESULT_OK -> R.string.app_update_install_unconfirmed
             outcome.resultCode == Activity.RESULT_CANCELED -> R.string.app_update_install_cancelled
             else -> installationFailureMessage(outcome.data?.getIntExtra("android.intent.extra.INSTALL_RESULT", 0) ?: 0)

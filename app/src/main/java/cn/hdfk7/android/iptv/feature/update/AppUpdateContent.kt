@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
@@ -48,7 +49,7 @@ internal fun AppUpdateContent(
     val primaryFocus = remember(calculation = { FocusRequester() })
     val closeFocus = remember(calculation = { FocusRequester() })
     val redownloadFocus = remember(calculation = { FocusRequester() })
-    UpdateDialogContainer(onClose = onClose, content = {
+    UpdateDialogContainer(downloading = downloading, onClose = onClose, content = {
         val inputMode = LocalInputModeManager.current
         LaunchedEffect(key1 = primaryLabel, key2 = canRedownload, block = {
             inputMode.requestInputMode(InputMode.Keyboard)
@@ -146,9 +147,9 @@ internal fun AppUpdateContent(
 }
 
 @Composable
-private fun UpdateDialogContainer(onClose: () -> Unit, content: @Composable () -> Unit): Unit {
+private fun UpdateDialogContainer(downloading: Boolean, onClose: () -> Unit, content: @Composable () -> Unit): Unit {
     val television = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
-    Dialog(onDismissRequest = onClose, content = {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(dismissOnClickOutside = !downloading), content = {
         Box(
             modifier = if (television) Modifier.width(460.dp) else Modifier,
             contentAlignment = Alignment.Center,

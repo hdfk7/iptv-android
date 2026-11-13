@@ -156,7 +156,7 @@ internal fun validateUpdateApk(context: Context, pending: File, release: AppRele
     val archive = context.packageManager.getPackageArchiveInfo(pending.path, signingFlags)
         ?: throw AppUpdateDownloadException(R.string.app_update_archive_unreadable)
     @Suppress("DEPRECATION")
-    if (archive.packageName != context.packageName || archive.versionCode != release.versionCode) {
+    if (archive.packageName != context.packageName || release.differsFrom(archive.versionCode.toLong(), archive.versionName)) {
         throw AppUpdateDownloadException(R.string.app_update_archive_mismatch)
     }
     if ((archive.applicationInfo?.minSdkVersion ?: Int.MAX_VALUE) > Build.VERSION.SDK_INT) {

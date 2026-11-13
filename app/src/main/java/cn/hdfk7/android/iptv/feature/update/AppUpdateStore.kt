@@ -11,12 +11,13 @@ internal class AppUpdateStore(context: Context) {
 
     fun pendingRelease(): AppRelease? {
         val version = preferences.getInt("version", 0)
-        if (version <= BuildConfig.VERSION_CODE || !apk.isFile || apk.length() == 0L) {
+        if (version <= 0 || !apk.isFile || apk.length() == 0L) {
             return null
         }
         val name = preferences.getString("name", null) ?: return null
         val url = preferences.getString("url", null) ?: return null
         return AppRelease(version, name, url, preferences.getString("notes", "").orEmpty())
+            .takeIf(predicate = { release -> release.differsFrom(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME) })
     }
 
     fun save(release: AppRelease): Boolean {
