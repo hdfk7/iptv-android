@@ -1,6 +1,7 @@
 """Verify a data-preserving local upgrade on an Android phone or TV."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -107,11 +108,50 @@ def update_action(device, label, node):
         device.tap(node)
 
 
-def install_in_app(device, expected):
+def confirm_system_control(device, label, node):
+    if device.device_type == "phone":
+        device.tap(node)
+        return
+    for direction in ("RIGHT", "LEFT", "DOWN", "UP"):
+        for _ in range(6):
+            root = device.tree()
+            if any(item.get("focused") == "true" and control(item, label) is not None
+                   for item in root.iter("node")):
+                device.key("KEYCODE_DPAD_CENTER")
+                return
+            device.key("KEYCODE_DPAD_" + direction)
+    raise AssertionError(f"System control is not reachable: {label}")
+
+
+def finish_installation(device, expected):
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        installed = device.shell("dumpsys", "package", PACKAGE)
+        code = re.search(r"\bversionCode=(\d+)\s", installed)
+        name = re.search(r"\bversionName=([^\r\n]+)", installed)
+        if code and name and int(code[1]) == expected["versionCode"] and name[1].strip() == expected["versionName"]:
+            return
+        root = device.tree()
+        for label in ("安装包已损坏", "应用未安装", "App not installed", "输入密码", "请输入锁屏密码", "验证指纹"):
+            if control(root, label) is not None:
+                raise AssertionError(f"System installer stopped at {label}; inspect this screen before resuming")
+        for label in ("已知悉风险", "继续安装", "INSTALL", "Install", "安装"):
+            node = control(root, label)
+            if node is not None and node.get("enabled", "true") == "true":
+                if node.get("checkable") == "true" and node.get("checked") == "true":
+                    continue
+                confirm_system_control(device, label, node)
+                break
+        time.sleep(0.5)
+    raise AssertionError("System installer did not install the requested version; inspect the current screen")
+
+
+def install_in_app(device, expected, download_timeout=900):
     root = device.tree()
     installer_controls = ("安装", "Install", "INSTALL", "继续安装", "已知悉风险")
     if any(control(root, text) is not None for text in installer_controls):
-        raise AssertionError("Finish the visible system installer, then rerun the upgrade phase")
+        finish_installation(device, expected)
+        return
     if find(root, "检查应用更新") is None or control(root, "关闭设置") is not None:
         open_app(device)
         close_panels(device)
@@ -127,10 +167,10 @@ def install_in_app(device, expected):
         redownload = find(device.tree(), "重新下载")
         if redownload is not None:
             update_action(device, "重新下载", redownload)
-            label, node = wait_for_ui(device, ("去授权", "安装更新"), timeout=150)
+            label, node = wait_for_ui(device, ("去授权", "安装更新"), timeout=download_timeout)
     if label == "确认下载":
         update_action(device, label, node)
-        label, node = wait_for_ui(device, ("去授权", "安装更新"), timeout=150)
+        label, node = wait_for_ui(device, ("去授权", "安装更新"), timeout=download_timeout)
     if label == "去授权":
         update_action(device, label, node)
         if device.device_type == "tv":
@@ -148,32 +188,10 @@ def install_in_app(device, expected):
             _, switch = wait_for_ui(device, ("允许来自此来源的应用", "允许来自此来源的安装", "Allow from this source"))
             device.tap(switch)
         device.key("KEYCODE_BACK")
+        open_app(device)
         label, node = wait_for_ui(device, ("安装更新",))
     update_action(device, label, node)
-    install_labels = ("INSTALL", "Install", "安装", "继续安装")
-    label, node = wait_for_ui(device, ("已知悉风险", "开发者身份未验证", "安全验证", *install_labels))
-    if label in ("已知悉风险", "开发者身份未验证", "安全验证"):
-        raise AssertionError("Installer is waiting for its on-device confirmation; resume this run after handling it")
-    if device.device_type == "tv":
-        for _ in range(6):
-            root = device.tree()
-            button = find(root, label)
-            if button is not None and any(n.get("focused") == "true" and find(n, label) is not None
-                                          for n in root.iter("node")):
-                device.key("KEYCODE_DPAD_CENTER")
-                break
-            device.key("KEYCODE_DPAD_RIGHT")
-        else:
-            raise AssertionError("System Install button could not be reached")
-    else:
-        device.tap(node)
-    deadline = time.monotonic() + 45
-    while time.monotonic() < deadline:
-        installed = device.shell("dumpsys", "package", PACKAGE)
-        if re.search(rf"\bversionCode={expected['versionCode']}\s", installed):
-            return
-        time.sleep(0.5)
-    raise AssertionError("System installer did not install the requested version")
+    finish_installation(device, expected)
 
 
 def write_json(path, value):
@@ -192,9 +210,12 @@ def main():
     parser.add_argument("--build-tools", type=Path, required=True)
     parser.add_argument("--phase", choices=("baseline", "upgrade"), required=True)
     parser.add_argument("--fixture-port", type=int, default=18764)
+    parser.add_argument("--download-timeout", type=int, default=900, help="Seconds to wait for the App download; does not change App timeouts")
     args = parser.parse_args()
     if args.phone == args.tv:
         parser.error("Select two different devices")
+    if args.download_timeout <= 0:
+        parser.error("--download-timeout must be positive")
     old_apk = args.old_apk.resolve()
     package, old_entry, old_signers = apk_identity(old_apk, args.build_tools)
     if package != PACKAGE:
@@ -219,14 +240,27 @@ def main():
             parser.error("Use a fresh QA output directory for a new baseline")
         for device in devices:
             verify_installed(device, old_apk, old_entry)
-        records = {}
-        for device in devices:
+        def prepare(device):
             seed(device, url, guide)
-            records[device.device_type] = {
+            return {
                 "model": device.shell("getprop", "ro.product.model").strip(),
                 "android": device.shell("getprop", "ro.build.version.release").strip(),
                 "before": snapshot(device, "before", url),
             }
+        records = {}
+        errors = []
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            tasks = {pool.submit(prepare, device): device.device_type for device in devices}
+            for task in as_completed(tasks):
+                kind = tasks[task]
+                try:
+                    records[kind] = task.result()
+                    print(f"{kind}: old-version baseline passed", flush=True)
+                except Exception as error:
+                    errors.append(f"{kind}: {error}")
+                    print(errors[-1], flush=True)
+        if errors:
+            raise AssertionError("; ".join(errors))
         write_json(checkpoint, {"identity": identity, "devices": records})
         print("Both old-version baselines are ready", flush=True)
         return
@@ -278,16 +312,35 @@ def main():
             pending.append((device, True))
 
     for device, install in pending:
-        record = state["devices"][device.device_type]
         if install:
-            record["upgradeStarted"] = True
-            write_json(checkpoint, state)
-            install_in_app(device, new_entry)
+            state["devices"][device.device_type]["upgradeStarted"] = True
+    write_json(checkpoint, state)
+
+    def upgrade(device, install):
+        if install:
+            install_in_app(device, new_entry, args.download_timeout)
         verify_installed(device, new_apk, new_entry)
-        record["after"] = snapshot(device, "after", url)
-        record["passed"] = record["before"] == record["after"]
-        write_json(checkpoint, state)
-        assert record["passed"], f"{device.device_type}: visible data differs after the upgrade"
+        return snapshot(device, "after", url)
+
+    errors = []
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        tasks = {pool.submit(upgrade, device, install): device.device_type for device, install in pending}
+        for task in as_completed(tasks):
+            kind = tasks[task]
+            record = state["devices"][kind]
+            try:
+                record["after"] = task.result()
+                record["passed"] = record["before"] == record["after"]
+                assert record["passed"], "visible data differs after the upgrade"
+                record.pop("error", None)
+                print(f"{kind}: upgrade and data checks passed", flush=True)
+            except Exception as error:
+                record["error"] = str(error)
+                errors.append(f"{kind}: {error}")
+                print(errors[-1], flush=True)
+            write_json(checkpoint, state)
+    if errors:
+        raise AssertionError("; ".join(errors))
     print("Both in-app upgrades and data checks passed", flush=True)
 
 

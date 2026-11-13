@@ -55,25 +55,52 @@ class Device:
         self.input("tap", str((left + right) // 2), str((top + bottom) // 2))
 
     def click(self, label, attr="text"):
-        node = find(self.tree(), label, attr)
-        if node is None:
-            raise AssertionError(f"Control not visible: {label}")
-        self.tap(node)
+        self.tap(self.wait_for(label, attr))
+
+    def wait_for(self, label, attr="text", timeout=15):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            node = find(self.tree(), label, attr)
+            if node is not None:
+                return node
+        raise AssertionError(f"Control not visible: {label}")
 
     def start(self):
         self.key("KEYCODE_HOME")
         if self.device_type == "phone":
-            self.click("IPTV", "content-desc")
-        else:
-            for _ in range(12):
+            for direction in (1, 1, 1, -1, -1, -1, -1, -1, -1):
                 root = self.tree()
-                focused = [node for node in root.iter("node") if node.get("focused") == "true"]
-                if any(node.get("content-desc") == "IPTV" or find(node, "IPTV") is not None for node in focused):
-                    self.key("KEYCODE_DPAD_CENTER")
+                icon = find(root, "IPTV", "content-desc")
+                if icon is not None:
+                    self.tap(icon)
                     break
-                self.key("KEYCODE_DPAD_RIGHT")
+                left, top, right, bottom = bounds(root.find("node"))
+                start, end = (right - 80, left + 80) if direction == 1 else (left + 80, right - 80)
+                self.input("swipe", str(start), str((top + bottom) // 2), str(end), str((top + bottom) // 2), "350")
             else:
-                raise AssertionError("IPTV is not reachable in the launcher row")
+                raise AssertionError("IPTV was not found on the launcher pages")
+        else:
+            self.launcher_select("应用")
+            self.launcher_select("IPTV")
+
+    def launcher_select(self, label):
+        for _ in range(24):
+            root = self.tree()
+            focused = next((node for node in root.iter("node") if node.get("focused") == "true"), None)
+            target = find(root, label, "content-desc")
+            if target is None:
+                target = find(root, label)
+            if focused is None or target is None:
+                raise AssertionError(f"Launcher focus or entry missing: {label}")
+            if find(focused, label, "content-desc") is not None or find(focused, label) is not None:
+                self.key("KEYCODE_DPAD_CENTER")
+                return
+            left, top, right, bottom = bounds(focused)
+            x1, y1, x2, y2 = bounds(target)
+            x, y = (x1 + x2) // 2, (y1 + y2) // 2
+            direction = ("UP" if y < top else "DOWN") if not top <= y <= bottom else ("LEFT" if x < left else "RIGHT")
+            self.key("KEYCODE_DPAD_" + direction)
+        raise AssertionError(f"Launcher entry is not reachable: {label}")
 
     def player_control(self, label):
         for _ in range(3):
@@ -228,16 +255,19 @@ def verify_installed(device, apk, entry):
 
 
 def verify_release_apk(device):
-    entry, apk = release_artifact()
-    if os.environ.get("IPTV_QA_APK"):
-        apk = Path(os.environ["IPTV_QA_APK"])
     if (QA_OUTPUT / ".iptv-qa-run").is_file():
         checkpoint = QA_OUTPUT / "local-upgrade" / "paired-run.json"
         assert checkpoint.is_file(), "Complete the paired upgrade before running Release regression"
         state = json.loads(checkpoint.read_text(encoding="utf-8"))
         assert all(state["devices"][kind].get("passed") for kind in ("phone", "tv"))
         assert state["identity"][device.device_type] == device.serial
+        entry = state["identity"]["to"]
+        apk = Path(os.environ["IPTV_QA_APK"]) if os.environ.get("IPTV_QA_APK") else release_artifact()[1]
         assert state["identity"]["candidateSha256"] == hashlib.sha256(apk.read_bytes()).hexdigest()
+    else:
+        entry, apk = release_artifact()
+        if os.environ.get("IPTV_QA_APK"):
+            apk = Path(os.environ["IPTV_QA_APK"])
     return verify_installed(device, apk, entry)
 
 

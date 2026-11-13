@@ -61,7 +61,8 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def serve_fixture(self, path):
         if path == "/midnight.xml":
             zone = timezone(timedelta(minutes=int(parse_qs(urlparse(self.path).query).get("offset", ["480"])[0])))
-            midnight = datetime.now(zone).replace(hour=0, minute=0, second=0, microsecond=0)
+            day = parse_qs(urlparse(self.path).query).get("date", [datetime.now(zone).strftime("%Y-%m-%d")])[0]
+            midnight = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=zone)
             entries = [
                 ("QA Yesterday Only", -120, -60), ("QA Entering Midnight", -60, 60),
                 ("QA Morning", 60, 120), ("QA Daytime", 120, 1380),
@@ -138,7 +139,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
 /stall-start.ts
 #EXTINF:5.0,
 /stall-tail.ts
-#EXT-X-ENDLIST
 """, "application/vnd.apple.mpegurl")
             return
         if path == "/stall-start.ts":

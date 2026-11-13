@@ -108,6 +108,15 @@ def proxy_playlist(device, origin_port, guide_url, since):
                       [host + "/media.mp4?release=1", "/media.mp4?release=1"], since)
 
 
+def programme_rows(root):
+    rows = set()
+    for row in root.iter("node"):
+        cells = [item.get("text") for item in row.iter("node") if item.get("text")]
+        if len(cells) == 2 and re.fullmatch(r"\d{2}:\d{2}", cells[0]):
+            rows.add(tuple(cells))
+    return rows
+
+
 def verify_midnight(device):
     open_channels(device)
     root = device.tree()
@@ -125,10 +134,7 @@ def verify_midnight(device):
     seen = set()
 
     def collect():
-        for row in device.tree().iter("node"):
-            cells = [item.get("text") for item in row if item.get("text")]
-            if len(cells) == 2 and re.fullmatch(r"\d{2}:\d{2}", cells[0]):
-                seen.add(tuple(cells))
+        seen.update(programme_rows(device.tree()))
 
     collect()
     if device.device_type == "tv":
@@ -158,7 +164,9 @@ def guide_address(device):
     minutes = int(offset[1:3]) * 60 + int(offset[3:])
     if offset[0] == "-":
         minutes = -minutes
-    return f"http://qa-iptv.test/midnight.xml?offset={minutes}&device={device.device_type}"
+    day = device.shell("date", "+%Y-%m-%d").strip()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", day), day
+    return f"http://qa-iptv.test/midnight.xml?offset={minutes}&device={device.device_type}&date={day}"
 
 
 def main():

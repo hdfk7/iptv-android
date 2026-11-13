@@ -21,8 +21,15 @@ def control(root, label):
 
 
 def type_in_field(device, value):
+    field = next((node for node in device.tree().iter("node")
+                  if node.get("focused") == "true" and node.get("class") == "android.widget.EditText"), None)
+    assert field is not None, "An editable field must have focus before typing"
+    previous = field.get("text", "")
+    if previous:
+        device.key("KEYCODE_MOVE_END")
+        device.key(*(["KEYCODE_DEL"] * len(previous)))
     device.input("text", "'" + value.replace("'", "'\\''") + "'")
-    assert find(device.tree(), value) is not None, "Focused field did not receive the expected value"
+    device.wait_for(value)
 
 
 def close_keyboard(device):
@@ -54,7 +61,7 @@ def source_manager(device):
         device.choose_with_remote("源管理", "KEYCODE_DPAD_UP")
     else:
         device.menu("源管理")
-    assert control(device.tree(), "添加源") is not None, "Source manager did not open"
+    device.wait_for("添加源", "content-desc")
 
 
 def action_row(root, title, action):
@@ -142,7 +149,7 @@ def add_source(device, name, url, guide):
             type_in_field(device, value)
             close_keyboard(device)
         device.click("保存", "content-desc")
-    assert control(device.tree(), "添加源") is not None, "Source was not saved"
+    device.wait_for("添加源", "content-desc")
 
 
 def select_channel(device, name):
@@ -183,5 +190,5 @@ def seed(device, url, guide):
         device.key("KEYCODE_INFO")
     else:
         device.tap(device.player_control("收藏节目"))
-    assert control(device.tree(), "取消收藏") is not None, "Test channel was not added to favorites"
+    device.wait_for("取消收藏", "content-desc")
     close_panels(device)
