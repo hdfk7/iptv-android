@@ -10,11 +10,14 @@ import sys
 import time
 from pathlib import Path
 
-from release_ui import Device, PACKAGE, bounds, find, release_artifact, verify_installed
-from upgrade_seed import close_panels, find_source, open_app, seed
+from release_ui import Device, PACKAGE, QA_OUTPUT, bounds, find, release_artifact, verify_installed
+from upgrade_seed import (
+    HISTORY_CHANNEL, SEED_CHANNEL, SEED_NAME, close_panels, control, open_app, open_channels, seed,
+    source_action, source_manager,
+)
 
 
-OUTPUT = Path("app/build/outputs/qa/local-upgrade")
+OUTPUT = QA_OUTPUT / "local-upgrade"
 
 
 def apk_identity(apk, tools):
@@ -32,42 +35,51 @@ def apk_identity(apk, tools):
     return package[1], {"versionCode": int(package[2]), "versionName": package[3]}, signers
 
 
-def snapshot(device, stage, seed_url=None):
+def channel_names(root):
+    labels = [node.get("text") for node in root.iter("node") if node.get("text")]
+    return [labels[index + 1] for index, label in enumerate(labels[:-1])
+            if len(label) == 3 and label.isdecimal()]
+
+
+def snapshot(device, stage, url):
     open_app(device)
-    close_panels(device)
-    device.more()
-    device.menu("源管理")
+    source_manager(device)
     root = device.tree()
     favorite = find(root, "收藏")
     assert favorite is not None, "Favorites row is missing"
     x, y, _, _ = bounds(favorite)
     counts = [node.get("text") for node in root.iter("node") if node.get("text", "").isdecimal()
               and abs(bounds(node)[0] - x) < 35 and 0 < bounds(node)[1] - y < 130]
-    assert counts, "Favorite count is missing"
-    urls = [node.get("text") for node in root.iter("node") if node.get("text", "").startswith(("http://", "https://"))]
-    assert urls, "No visible subscriptions to compare"
-    if seed_url is not None:
-        assert find_source(device, "IPTV-QA-Upgrade") is not None, "Temporary subscription is missing"
+    assert counts and int(counts[0]) > 0, "Nonempty favorites are required"
 
-    close_panels(device)
+    # Visit the seeded source through its normal entry, even if the launcher selected another source.
+    source_action(device, SEED_NAME)
+    source_manager(device)
+    root = device.tree()
+    urls = [node.get("text") for node in root.iter("node")
+            if node.get("text", "").startswith(("http://", "https://"))]
+    assert url in urls, "The test subscription address is missing"
+    source_action(device, "收藏")
+    open_channels(device)
+    favorites = channel_names(device.tree())
+    assert SEED_CHANNEL in favorites, "Seeded favorite is missing from visible rows"
+    device.screenshot(device.device_type, f"upgrade-{stage}-favorites")
+
+    source_action(device, SEED_NAME)
+    open_channels(device)
     if device.device_type == "tv":
-        device.key("KEYCODE_DPAD_LEFT", "KEYCODE_DPAD_LEFT")
-        device.choose_with_remote("最近", "KEYCODE_DPAD_LEFT")
+        device.key("KEYCODE_DPAD_LEFT")
+        # Recent is the rightmost group in the controlled source.
+        device.choose_with_remote("最近", "KEYCODE_DPAD_RIGHT", limit=4)
     else:
-        device.key("KEYCODE_MEDIA_PAUSE")
-        device.click("频道")
         device.click("最近")
     root = device.tree()
-    assert find(root, "最近") is not None, "Recent group is missing"
-    # Read channel number/name pairs and ignore the changing programme previews.
-    labels = [node.get("text") for node in root.iter("node") if node.get("text")]
-    recent = [labels[index + 1] for index, label in enumerate(labels[:-1])
-              if len(label) == 3 and label.isdecimal()]
-    assert recent, "Play a channel on the active source before collecting the baseline"
+    recent = channel_names(root)
+    assert HISTORY_CHANNEL in recent, "The previously watched channel is missing"
     device.screenshot(device.device_type, f"upgrade-{stage}-recent")
-    device.key("KEYCODE_BACK")
-    source_hashes = [hashlib.sha256(url.encode()).hexdigest() for url in urls]
-    return {"visibleSubscriptionHashes": source_hashes, "favoriteCount": int(counts[0]), "visibleRecent": recent}
+    close_panels(device)
+    return {"visibleSubscriptionHashes": sorted(hashlib.sha256(url.encode()).hexdigest() for url in urls),
+            "favoriteCount": int(counts[0]), "visibleFavorites": sorted(favorites), "visibleRecent": sorted(recent)}
 
 
 def wait_for_ui(device, labels, timeout=90):
@@ -97,7 +109,10 @@ def update_action(device, label, node):
 
 def install_in_app(device, expected):
     root = device.tree()
-    if find(root, "检查应用更新") is None or find(root, "关闭") is None:
+    installer_controls = ("安装", "Install", "INSTALL", "继续安装", "已知悉风险")
+    if any(control(root, text) is not None for text in installer_controls):
+        raise AssertionError("Finish the visible system installer, then rerun the upgrade phase")
+    if find(root, "检查应用更新") is None or control(root, "关闭设置") is not None:
         open_app(device)
         close_panels(device)
         device.more()
@@ -138,14 +153,13 @@ def install_in_app(device, expected):
     install_labels = ("INSTALL", "Install", "安装", "继续安装")
     label, node = wait_for_ui(device, ("已知悉风险", "开发者身份未验证", "安全验证", *install_labels))
     if label in ("已知悉风险", "开发者身份未验证", "安全验证"):
-        device.key("KEYCODE_BACK")
-        device.key("KEYCODE_HOME")
-        raise AssertionError("OPPO installer requires on-device confirmation; returned to Home")
+        raise AssertionError("Installer is waiting for its on-device confirmation; resume this run after handling it")
     if device.device_type == "tv":
         for _ in range(6):
             root = device.tree()
             button = find(root, label)
-            if button is not None and button.get("focused") == "true":
+            if button is not None and any(n.get("focused") == "true" and find(n, label) is not None
+                                          for n in root.iter("node")):
                 device.key("KEYCODE_DPAD_CENTER")
                 break
             device.key("KEYCODE_DPAD_RIGHT")
@@ -162,55 +176,105 @@ def install_in_app(device, expected):
     raise AssertionError("System installer did not install the requested version")
 
 
+def write_json(path, value):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
 def main():
     sys.stdout.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True)
-    parser.add_argument("--device", choices=("phone", "tv"), required=True)
+    parser.add_argument("--phone", required=True, help="ADB serial of the physical phone")
+    parser.add_argument("--tv", required=True, help="ADB serial of the TV or TV emulator")
     parser.add_argument("--old-apk", type=Path, required=True)
+    parser.add_argument("--new-apk", type=Path, help="Exact distributed APK; defaults to the local Release artifact")
     parser.add_argument("--build-tools", type=Path, required=True)
     parser.add_argument("--phase", choices=("baseline", "upgrade"), required=True)
-    parser.add_argument("--seed-url", help="Add a temporary test subscription on the old version before the upgrade")
-    parser.add_argument("--seed-guide", help="XMLTV address for the temporary test subscription")
+    parser.add_argument("--fixture-port", type=int, default=18764)
     args = parser.parse_args()
-    if bool(args.seed_url) != bool(args.seed_guide):
-        parser.error("--seed-url and --seed-guide must be supplied together")
-    _, current_apk = release_artifact()
-    package, old_entry, old_signers = apk_identity(args.old_apk.resolve(), args.build_tools)
-    new_package, new_entry, new_signers = apk_identity(current_apk.resolve(), args.build_tools)
-    if package != new_package or old_signers != new_signers or old_entry["versionCode"] >= new_entry["versionCode"]:
-        parser.error("Old APK must have the same package and signing certificate and a lower versionCode")
-    device = Device(args.serial, args.device)
+    if args.phone == args.tv:
+        parser.error("Select two different devices")
+    old_apk = args.old_apk.resolve()
+    new_apk = args.new_apk.resolve() if args.new_apk else release_artifact()[1].resolve()
+    package, old_entry, old_signers = apk_identity(old_apk, args.build_tools)
+    new_package, new_entry, new_signers = apk_identity(new_apk, args.build_tools)
+    if package != PACKAGE or new_package != PACKAGE or old_signers != new_signers:
+        parser.error("Both APKs must use the IPTV package and the same formal signing certificate")
+    if any(path.is_relative_to(QA_OUTPUT.resolve()) for path in (old_apk, new_apk)):
+        parser.error("Keep APKs outside the temporary QA output directory")
+    if old_entry["versionCode"] >= new_entry["versionCode"]:
+        parser.error("The candidate must have a greater versionCode")
+    devices = [Device(args.phone, "phone"), Device(args.tv, "tv")]
+    old_hash = hashlib.sha256(old_apk.read_bytes()).hexdigest()
+    new_hash = hashlib.sha256(new_apk.read_bytes()).hexdigest()
+    identity = {"phone": args.phone, "tv": args.tv, "from": old_entry, "to": new_entry,
+                "oldSha256": old_hash, "candidateSha256": new_hash, "fixturePort": args.fixture_port}
+    url = f"http://127.0.0.1:{args.fixture_port}/release.m3u"
+    guide = f"http://127.0.0.1:{args.fixture_port}/release-guide.xml"
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    result = {"method": "in-app", "serial": args.serial, "model": device.shell("getprop", "ro.product.model").strip(),
-              "android": device.shell("getprop", "ro.build.version.release").strip(), "from": old_entry, "to": new_entry}
-    _, result["oldSha256"] = verify_installed(device, args.old_apk, old_entry)
-    baseline_path = OUTPUT / f"{args.device}-baseline.json"
-    candidate_hash = hashlib.sha256(current_apk.read_bytes()).hexdigest()
+    checkpoint = OUTPUT / "paired-run.json"
+
     if args.phase == "baseline":
-        if args.seed_url:
-            open_app(device)
-            close_panels(device)
-            result["temporaryFavoriteAdded"] = seed(device, args.seed_url, args.seed_guide, "IPTV-QA-Upgrade")
-        result["before"] = snapshot(device, "before", args.seed_url)
-        assert result["before"]["favoriteCount"] > 0, "The old version must contain at least one favorite"
-        result["candidateSha256"] = candidate_hash
-        result["seedUrl"] = args.seed_url
-        baseline_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(f"{args.device}: old-version baseline recorded", flush=True)
+        if not (QA_OUTPUT / ".iptv-qa-run").is_file():
+            parser.error("Prepare a marked temporary QA run directory as described in qa/README.md")
+        if checkpoint.exists():
+            parser.error("Use a fresh QA output directory for a new baseline")
+        for device in devices:
+            verify_installed(device, old_apk, old_entry)
+        records = {}
+        for device in devices:
+            seed(device, url, guide)
+            records[device.device_type] = {
+                "model": device.shell("getprop", "ro.product.model").strip(),
+                "android": device.shell("getprop", "ro.build.version.release").strip(),
+                "before": snapshot(device, "before", url),
+            }
+        write_json(checkpoint, {"identity": identity, "devices": records})
+        print("Both old-version baselines are ready", flush=True)
         return
-    result = json.loads(baseline_path.read_text(encoding="utf-8"))
-    assert result["serial"] == args.serial and result["from"] == old_entry and result["to"] == new_entry
-    assert result["candidateSha256"] == candidate_hash, "Collect a new baseline for this release APK"
-    assert result["before"]["favoriteCount"] > 0 and result["before"]["visibleRecent"]
-    install_in_app(device, new_entry)
-    _, result["sha256"] = verify_installed(device, current_apk, new_entry)
-    result["after"] = snapshot(device, "after", result["seedUrl"])
-    result["passed"] = result["before"] == result["after"]
-    result["nonEmptyFavoritesCovered"] = result["before"]["favoriteCount"] > 0
-    (OUTPUT / f"{args.device}-result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    assert result["passed"], "Visible data differs after the upgrade"
-    print(f"{args.device}: local upgrade passed", flush=True)
+
+    if not checkpoint.is_file():
+        parser.error("Collect both old-version baselines in this run before upgrading")
+    state = json.loads(checkpoint.read_text(encoding="utf-8"))
+    if state["identity"] != identity or set(state["devices"]) != {"phone", "tv"}:
+        parser.error("Device pair, APKs or fixture do not match the recorded baseline")
+    for kind, record in state["devices"].items():
+        before = record.get("before", {})
+        if (not before.get("visibleSubscriptionHashes") or not before.get("favoriteCount")
+                or SEED_CHANNEL not in before.get("visibleFavorites", [])
+                or HISTORY_CHANNEL not in before.get("visibleRecent", [])):
+            parser.error(f"Incomplete old-version baseline: {kind}")
+    # Check both devices before pressing the first installer button. A retry can
+    # verify an already-installed candidate when the prior attempt was interrupted.
+    pending = []
+    for device in devices:
+        record = state["devices"][device.device_type]
+        if record.get("passed"):
+            verify_installed(device, new_apk, new_entry)
+            continue
+        try:
+            verify_installed(device, old_apk, old_entry)
+        except AssertionError:
+            if not record.get("upgradeStarted"):
+                raise
+            verify_installed(device, new_apk, new_entry)
+            pending.append((device, False))
+        else:
+            pending.append((device, True))
+
+    for device, install in pending:
+        record = state["devices"][device.device_type]
+        if install:
+            record["upgradeStarted"] = True
+            write_json(checkpoint, state)
+            install_in_app(device, new_entry)
+        verify_installed(device, new_apk, new_entry)
+        record["after"] = snapshot(device, "after", url)
+        record["passed"] = record["before"] == record["after"]
+        write_json(checkpoint, state)
+        assert record["passed"], f"{device.device_type}: visible data differs after the upgrade"
+    print("Both in-app upgrades and data checks passed", flush=True)
 
 
 if __name__ == "__main__":

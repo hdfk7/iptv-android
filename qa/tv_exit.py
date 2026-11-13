@@ -5,14 +5,13 @@ import io
 import json
 import re
 import time
-from pathlib import Path
 
 from PIL import Image
 
-from release_ui import Device, PACKAGE, verify_release_apk
+from release_ui import QA_OUTPUT, Device, PACKAGE, verify_release_apk
+from upgrade_seed import close_panels, open_app
 
-
-OUTPUT = Path("app/build/outputs/qa/tv-exit")
+OUTPUT = QA_OUTPUT / "tv-exit"
 
 
 def hint_pixels(device, name):
@@ -31,8 +30,12 @@ def app_has_focus(device):
 
 
 def verify(device):
-    device.start()
-    device.key("KEYCODE_INFO", "KEYCODE_BACK")
+    open_app(device)
+    close_panels(device)
+    device.key("KEYCODE_INFO")
+    device.key("KEYCODE_BACK")
+    time.sleep(2.1)
+    assert app_has_focus(device)
     baseline = hint_pixels(device, "fullscreen")
     device.key("KEYCODE_BACK")
     visible = hint_pixels(device, "hint-visible")

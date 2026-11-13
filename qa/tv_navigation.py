@@ -4,12 +4,13 @@ import argparse
 import json
 import sys
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
-from release_ui import Device, find, verify_release_apk, tv_highlight
+from release_ui import QA_OUTPUT, Device, find, verify_release_apk, tv_highlight
 
 
-OUTPUT = Path("app/build/outputs/qa/tv-navigation")
+from upgrade_seed import close_panels, open_app
+
+OUTPUT = QA_OUTPUT / "tv-navigation"
 
 
 def snapshot(device, name):
@@ -29,7 +30,8 @@ def assert_fullscreen(root):
 
 
 def verify_navigation(device):
-    device.start()
+    open_app(device)
+    close_panels(device)
     device.key("KEYCODE_INFO")
     device.key("KEYCODE_BACK")
     root, _ = snapshot(device, "01-fullscreen")

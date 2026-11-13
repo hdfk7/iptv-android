@@ -19,14 +19,11 @@ APK 输出到 `app/build/outputs/apk/debug`、`app/build/outputs/apk/release`，
 ```powershell
 $releaseDir = 'app/build/outputs/apk/release'
 $release = (Get-Content "$releaseDir/output-metadata.json" -Raw | ConvertFrom-Json).elements[0]
-adb install -r (Join-Path $releaseDir $release.outputFile)
-adb shell dumpsys package cn.hdfk7.android.iptv | Select-String 'versionCode=|versionName='
-adb shell am start -n cn.hdfk7.android.iptv/cn.hdfk7.android.iptv.app.MainActivity
+adb -s <设备序列号> shell dumpsys package cn.hdfk7.android.iptv | Select-String 'versionCode=|versionName='
 ```
 
+通过设备安装界面准备旧版正式包，从桌面打开 IPTV。手机和 TV 的旧版数据准备、应用内升级及清理见 [全量回归](qa/README.md)。
 Debug 包名 `cn.hdfk7.android.iptv.debug`、启动器名称 IPTV；Release 包名 `cn.hdfk7.android.iptv`、名称 IPTV。电视需开启开发者选项并完成 ADB 授权。macOS/Linux 使用 `./gradlew`。
-
-最初的 APK 使用临时调试签名；如新签名覆盖旧包发生冲突，需先卸载旧包，卸载将清除其数据。新版带 .debug 后缀的包可与最初无后缀包并存。
 
 ## 签名、打包与 Git
 
@@ -155,7 +152,7 @@ JUnit 5 覆盖解析、线路顺序、源管理、跨源收藏、离线缓存、
 
 ## 交互回归
 
-电视回归使用当前签名 Release，手机回归包含竖屏和横屏。正式包、遥控导航、本地升级和应用内更新的验收见 [QA 清单](qa/README.md)。
+电视回归使用当前签名 Release，手机回归包含竖屏和横屏。正式包、遥控导航、两端旧版基线和应用内升级的验收见 [QA 清单](qa/README.md)。
 
 电视端使用 `qa/tv_navigation.py` 验证。全屏左键打开频道侧栏，上下键浏览时直播保持原频道，确认后切台并收起浮层。通过更多菜单进入设置，返回时检查焦点回到设置入口。
 

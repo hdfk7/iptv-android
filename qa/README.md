@@ -1,52 +1,60 @@
-# Android 手机和 TV 回归
+# IPTV 手机与 TV 全量回归
 
-## 正式包回归
+使用手机真机和 TV 真机或模拟器。从项目根目录运行，准备 ADB、Python 3.10+、Pillow、FFmpeg 和 Android SDK Build Tools。手机用点按、滑动和输入框，TV 用遥控。所有业务数据通过 App UI 建立。ADB 只用于模拟输入、读取状态及建立测试网络。
 
-从项目根目录运行。准备 ADB、Python 3.10 以上及 Android SDK Build Tools。TV 高亮检查使用 Pillow，安装命令为 `python -m pip install Pillow`。
+## 1. 准备
+
+运行 `.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease`。两台设备先通过安装界面装好同包名、同正式签名的旧版。新版 versionCode 必须更高。旧版 App 能正常访问的更新清单应指向本轮候选正式包。
+
+在系统临时目录创建独立的 `iptv-qa-<唯一编号>` 子目录，设置 `IPTV_QA_OUTPUT` 指向该目录，在其中新建空文件 `.iptv-qa-run`。设 `PYTHONDONTWRITEBYTECODE=1`。旧版和新版 APK 放在临时目录外。
+
+将自制的动态测试视频放在本轮目录，并用 FFmpeg 生成同名 TS 分片。启动 `python -B qa/fixture_server.py --media <临时目录中的MP4>`。用空闲端口建立两端的测试转发，默认 `adb -s <序列号> reverse tcp:18764 tcp:18764` 和 `adb -s <序列号> reverse tcp:18766 tcp:18766`。前者用于测试源，后者用于 HTTP 代理。端口调整时同步传给各脚本。
+
+## 2. 两台设备先在旧版 App 准备数据
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease
-python qa/release_ui.py --device phone --serial <手机序列号>
-python qa/release_ui.py --device tv --serial <TV序列号>
-python qa/tv_navigation.py --serial <TV序列号>
-python qa/tv_exit.py --serial <TV序列号>
+$upgrade = @('--phone', $phone, '--tv', $tv, '--old-apk', $oldApk, '--new-apk', $newApk, '--build-tools', $buildTools)
+python -B qa/local_upgrade.py --phase baseline @upgrade
 ```
 
-先通过安装界面准备当前签名 Release。脚本核对 `versionName`、`versionCode` 和设备 APK 的 SHA-256。产物位于 `app/build/outputs/qa`。记录设备型号、Android 版本、APK 及通过、失败或待验证结果。手机横竖屏检查后恢复原旋转设置。TV 用遥控按键操作；检查实际高亮、确认动作和返回位置。实体电视与模拟器分别记录。
+脚本先验证两端旧版的版本和 APK 哈希，再依次在 App 里添加、启用测试源、播放、收藏，采集订阅、收藏和最近观看。两端都准备好后才生成配对基线。中途失败时先核对残留的测试数据，再重跑基线。
+
+## 3. 从旧版 App 发起升级
+
+```powershell
+python -B qa/local_upgrade.py --phase upgrade @upgrade
+```
+
+从旧版 App 检查更新、下载，按需授权并在系统安装器确认。系统要求人工操作时，完成后用相同参数继续。升级脚本核验配对基线、安装版本与 APK 哈希，再对比原订阅、收藏和最近观看。两端通过后开始新版回归。
+
+## 4. 新版功能和界面回归
+
+候选包须与本地 Release 元数据指向的包一致。通过正常界面或旋转手机切换方向。TV 导航用 App 选好含多频道和分组的源。运行：
+
+```powershell
+python -B qa/release_ui.py --device phone --serial $phone --orientation portrait
+python -B qa/release_ui.py --device phone --serial $phone --orientation landscape
+python -B qa/release_ui.py --device tv --serial $tv
+python -B qa/tv_navigation.py --serial $tv
+python -B qa/tv_exit.py --serial $tv
+python -B qa/controlled_ui.py --phase hls --device tv --serial $tv
+```
 
 | 场景 | 验收 |
 | --- | --- |
-| 手机横竖屏与 TV 表单 | 检查添加、编辑、删除确认和 HTTP 代理的布局。手机横屏滚动后字段及按钮可达。TV 初次打开表单保持遥控焦点，确认输入框后弹出键盘，关闭键盘后方向键继续可用。 |
-| TV 频道和节目单 | 全屏左键打开频道，频道行右键打开节目单，左键或返回恢复原频道焦点。方向键浏览期间保持原直播，确认后才换台。分组下键优先定位正在播放的频道，当前分组没有该频道时落到首项。 |
-| TV 暂停与退出 | 暂停前画面持续变化，暂停后画面停止，恢复后重新出画。若只出现高亮采样失败，保留原步骤、截图和结果以供复测。返回先关闭浮层，全屏首次返回显示提示，2 秒内再按返回退出。 |
-| 频道刷新与缓存 | 首条线路 404 后出画，手动切线能到达下一条。源返回 503 后重启，仍可读取该源的缓存频道与节目单。编辑 URL 后只使用新地址对应的缓存。 |
-| 节目单 | 核对当前和下一节目、设备时区的当天排期及跨午夜记录。当前节目最多一条。快速切源时检查旧结果未覆盖新源。 |
-| 代理和安全键盘 | 用可恢复的测试值保存代理配置，重启核对后恢复。OPPO 安全键盘用系统输入法状态或真机实际输入确认。受保护的截图不用于判断键盘是否打开，无法确认时记录待验证。 |
-| 更新检查 | 检查当前版本状态和版本说明。只有更高版本清单和同签名 APK 可用时，才可覆盖应用内下载、系统授权和安装。 |
+| 界面 | 播放页、底栏、频道分组、更多、节目单、设置、更新、源管理和收藏。核对对齐、长名称、滚动、键盘遮挡与横屏按钮可达。 |
+| TV 焦点 | 首次焦点、移动、高亮、确认与返回。节目单关闭后恢复原频道。分组下键定位当前频道或首项。关闭表单键盘后仍可用方向键。 |
+| 播放与设置 | 首帧、暂停和恢复、换台、重连、切线、音量、启动频道和铺满。TV 先关闭浮层，首次返回提示，2 秒内再次返回退出。 |
+| 数据功能 | 新增、编辑、取消及确认删除订阅，收藏、取消收藏和最近观看。 |
+| 线路与缓存 | 验证首线 404、HLS 分片挂起和备用线路出画。用 `/control?mode=release-offline` 模拟列表和 XMLTV 503，经 App 刷新、重开核对缓存，随后切回 `/control?mode=ok`。编辑 URL 后核对缓存归属。 |
+| 更新与键盘 | 核对当前版本、版本说明。安全键盘通过系统状态或真机实际输入确认。 |
 
-## 旧版数据基线和应用内升级
+两端分别运行 `controlled_ui.py --phase proxy-guide --device phone|tv --serial <序列号>`。检查代理及源站请求，核对跨入当天的节目从 00:00 显示、跨到次日的节目保留，以及当前和下一节目。手机从最近任务划掉 IPTV，TV 经系统应用详情停止 IPTV，再从桌面打开。运行 `controlled_ui.py --phase after-restart --device phone|tv --serial <序列号> --old-pid <之前输出的PID>` 验证冷启动、代理配置保留及新请求。表格中其余项目逐条走界面。
 
-在 TV 和手机分别运行，使用同包名、同签名且 `versionCode` 更低的旧版正式包。先准备可见订阅与最近观看。要验证非空收藏，在测试设备上先保留至少一条可识别的测试收藏。
+## 5. 汇报与清理
 
-```powershell
-python qa/local_upgrade.py --phase baseline --device phone --serial <手机序列号> --old-apk <旧版APK> --build-tools <BuildTools目录>
-python qa/local_upgrade.py --phase baseline --device tv --serial <TV序列号> --old-apk <旧版APK> --build-tools <BuildTools目录>
-```
+先核对结果，按设备整理通过、失败和待验证项。再通过系统设置的 **应用 → IPTV → 存储 → 清除数据** 恢复两端 IPTV 的刚安装状态。这会清除 IPTV 的原有和测试数据，保留设备上的最新正式版及主机的最新正式 APK。仅操作本轮指定设备上的 IPTV。手机系统全局代理和其他 App 保持原样。
 
-先通过设备安装界面准备旧版，再运行基线阶段。系统拒绝降级时保留现有安装和数据。脚本只读核对旧包签名、版本和哈希，记录可见订阅、收藏数量和最近观看；还要打开收藏列表确认具体条目。两端基线核对完成后，分别将命令的 `--phase baseline` 改为 `--phase upgrade`。结果在 `app/build/outputs/qa/local-upgrade`。
+停止本轮测试服务，并撤销本轮建立的端口转发。执行 `python -B qa/cleanup.py --phone $phone --tv $tv --new-apk $newApk`。脚本检查两台的最新包、默认订阅、空收藏及代理关闭，清理设备临时 UI 树和主机临时目录里的截图、视频、日志及检查点。最终结论在会话中汇报。
 
-传入 `--seed-url` 和 `--seed-guide` 可在旧版添加 `IPTV-QA-Upgrade` 测试订阅，并给当前频道添加一条测试收藏。TV 导航使用遥控按键，测试 URL 和名称通过 ADB 输入。升级测试完成后，删除该测试源；如果结果中的 `temporaryFavoriteAdded` 为 true，移除本次新增的收藏。
-
-应用内升级使用配置了测试 HTTPS 清单的同签名旧包。清单指向同签名、更高 `versionCode` 的候选包。从设置进入检查更新，确认下载，按需授权并在系统安装器确认，安装后核对包哈希和原数据。公开渠道验证使用实际分发的旧包和清单。
-
-脚本通过触摸、输入框打字和遥控按键创建测试数据并驱动升级界面。新版通过 App 发起下载和系统安装。版本、哈希和系统窗口状态可只读核对。系统安装器要求人工验证且现场无人时，退出安装器，记录该设备的升级未完成。
-
-## 受控播放与节目单
-
-用自行生成的测试 MP4 启动 `qa/fixture_server.py`。服务仅监听电脑的 `127.0.0.1`；用 `adb -s <序列号> reverse tcp:18764 tcp:18764` 转发。使用独立测试源 `http://127.0.0.1:18764/release.m3u` 和 `http://127.0.0.1:18764/release-guide.xml`。将服务切换到 `/control?mode=release-offline` 模拟 503，结束后恢复 `/control?mode=ok`，移除测试源和转发。
-
-HLS 卡顿回归在 App 内添加 `/debug-smoke.m3u` 测试源。服务目录需准备与 MP4 同名的 TS 分片。选择含停滞线路的频道，确认首次出画，随后等待备用线路恢复播放。
-
-## Release 换台耗时
-
-构建并覆盖安装带 `-PAPP_DEBUG_SWITCH=true` 的签名 Release。运行 `python qa/release_tune.py --serial <ADB序列号> --rounds 40`。脚本核对已安装 APK 的 SHA-256，在当前源相邻频道间往返，记录成功样本的 P50、P95 及失败和超时。结果在 `app/build/outputs/qa/release-tune-*.json`。对比时使用同一设备、测试源和网络条件。
+可选的换台耗时测试使用单独的性能环境和启用 `APP_DEBUG_SWITCH` 的签名 Release，运行 `python -B qa/release_tune.py --serial <TV序列号> --rounds 40`。

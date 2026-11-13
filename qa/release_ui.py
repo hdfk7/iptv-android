@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import re
 import subprocess
 import time
@@ -13,8 +14,9 @@ from pathlib import Path
 
 PACKAGE = "cn.hdfk7.android.iptv"
 APK_DIR = Path("app/build/outputs/apk/release")
-OUTPUT = Path("app/build/outputs/qa/release-ui")
-REMOTE_XML = "/data/local/tmp/iptv-release-ui.xml"
+QA_OUTPUT = Path(os.environ.get("IPTV_QA_OUTPUT", "app/build/outputs/qa"))
+OUTPUT = QA_OUTPUT / "release-ui"
+REMOTE_XML = "/data/local/tmp/iptv-qa-hierarchy.xml"
 
 
 class Device:
@@ -45,6 +47,9 @@ class Device:
                     raise
                 time.sleep(0.5)
 
+    def cleanup_hierarchy(self):
+        self.shell("rm", "-f", REMOTE_XML)
+
     def tap(self, node):
         left, top, right, bottom = bounds(node)
         self.input("tap", str((left + right) // 2), str((top + bottom) // 2))
@@ -70,13 +75,24 @@ class Device:
             else:
                 raise AssertionError("IPTV is not reachable in the launcher row")
 
+    def player_control(self, label):
+        for _ in range(3):
+            root = self.tree()
+            button = find(root, label)
+            if button is None:
+                button = find(root, label, "content-desc")
+            if button is not None:
+                return button
+            left, top, right, bottom = bounds(root.find("node"))
+            # The middle of the screen may contain the Play button or status card.
+            self.input("tap", str(left + (right - left) * 3 // 4), str(top + (bottom - top) // 3))
+        raise AssertionError(f"Player control not visible: {label}")
+
     def more(self):
         if self.device_type == "tv":
-            self.key("KEYCODE_INFO")
             self.key("KEYCODE_MENU")
-        else:
-            self.key("KEYCODE_MEDIA_PAUSE")
-            self.click("更多")
+        elif find(self.tree(), "刷新频道") is None:
+            self.tap(self.player_control("更多"))
 
     def menu(self, label):
         if self.device_type == "tv":
@@ -115,27 +131,29 @@ def bounds(node):
     return tuple(map(int, re.findall(r"\d+", node.get("bounds"))))
 
 
+def focus_color_present(screenshot, node):
+    left, top, right, bottom = bounds(node)
+    if right - left < 4 or bottom - top < 4:
+        return False
+    crop = screenshot.crop((left, top, right, bottom))
+    colors = {(57, 86, 115), (76, 102, 128)}
+    return sum(count for count, color in crop.getcolors(crop.width * crop.height)
+               if color in colors) > crop.width * crop.height * 0.20
+
+
 def tv_highlight(device, root=None, screenshot=None):
     from PIL import Image
 
     root = device.tree() if root is None else root
     screenshot = device.adb("exec-out", "screencap", "-p") if screenshot is None else screenshot
-    highlighted = []
-    focus_colors = {(57, 86, 115), (76, 102, 128)}
     with Image.open(io.BytesIO(screenshot)) as source:
-        image = source.convert("RGB")
+        frame = source.convert("RGB")
+        labels = []
         for node in root.iter("node"):
             label = node.get("text") or node.get("content-desc")
-            if not label or "://" in label:
-                continue
-            left, top, right, bottom = bounds(node)
-            if right - left < 4 or bottom - top < 4:
-                continue
-            crop = image.crop((left, top, right, bottom))
-            colors = crop.getcolors(crop.width * crop.height)
-            if sum(count for count, color in colors if color in focus_colors) > crop.width * crop.height * 0.20:
-                highlighted.append(label)
-    return highlighted
+            if label and "://" not in label and focus_color_present(frame, node):
+                labels.append(label)
+        return labels
 
 
 def check_form(root, fields):
@@ -156,9 +174,10 @@ def check_form(root, fields):
 
 
 def verify_forms(device, mode):
-    device.start()
-    device.more()
-    device.menu("源管理")
+    from upgrade_seed import close_panels, open_app, source_manager
+
+    open_app(device)
+    source_manager(device)
     if device.device_type == "tv":
         device.choose_with_remote("添加源")
     else:
@@ -170,9 +189,7 @@ def verify_forms(device, mode):
         assert "添加源" in tv_highlight(device), "TV add form did not restore the Add focus"
     else:
         device.click("取消", "content-desc")
-    device.key("KEYCODE_BACK")
-
-    device.start()
+    close_panels(device)
     device.more()
     device.menu("设置")
     if device.device_type == "tv":
@@ -194,7 +211,10 @@ def release_artifact():
 
 
 def verify_installed(device, apk, entry):
-    installed = device.shell("pm", "path", PACKAGE).splitlines()[0].removeprefix("package:")
+    paths = device.shell("pm", "path", PACKAGE).splitlines()
+    if not paths or not paths[0].startswith("package:"):
+        raise AssertionError("The IPTV package is missing")
+    installed = paths[0].removeprefix("package:")
     local_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
     if device.shell("sha256sum", installed).split()[0] != local_hash:
         raise AssertionError("Installed APK does not match the Release build")
@@ -209,31 +229,32 @@ def verify_installed(device, apk, entry):
 
 def verify_release_apk(device):
     entry, apk = release_artifact()
+    if (QA_OUTPUT / ".iptv-qa-run").is_file():
+        checkpoint = QA_OUTPUT / "local-upgrade" / "paired-run.json"
+        assert checkpoint.is_file(), "Complete the paired upgrade before running Release regression"
+        state = json.loads(checkpoint.read_text(encoding="utf-8"))
+        assert all(state["devices"][kind].get("passed") for kind in ("phone", "tv"))
+        assert state["identity"][device.device_type] == device.serial
+        assert state["identity"]["candidateSha256"] == hashlib.sha256(apk.read_bytes()).hexdigest()
     return verify_installed(device, apk, entry)
 
 
-def verify_release(serial, device_type):
+def verify_release(serial, device_type, orientation=None):
     device = Device(serial, device_type)
     entry, checksum = verify_release_apk(device)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     result = {"serial": serial, "model": device.shell("getprop", "ro.product.model").strip(),
               "android": device.shell("getprop", "ro.build.version.release").strip(),
               "versionName": entry["versionName"], "versionCode": entry["versionCode"],
-              "sha256": checksum, "passed": False}
-    rotation = device.shell("wm", "user-rotation").split() if device_type == "phone" else None
+              "sha256": checksum, "passed": False, "displayBounds": bounds(device.tree().find("node"))}
     try:
-        if rotation is None:
-            verify_forms(device, "tv")
-        else:
-            for mode, value in (("portrait", "0"), ("landscape", "1")):
-                device.shell("wm", "user-rotation", "lock", value)
-                verify_forms(device, mode)
+        _, _, width, height = result["displayBounds"]
+        if orientation is not None:
+            assert (height > width) == (orientation == "portrait"), "Rotate the device using its normal UI first"
+        verify_forms(device, orientation or device_type)
         result["passed"] = True
     finally:
-        if rotation is not None:
-            device.shell("wm", "user-rotation", *rotation)
-        device.shell("rm", "-f", REMOTE_XML)
-        (OUTPUT / f"{device_type}-result.json").write_text(
+        (OUTPUT / f"{orientation or device_type}-result.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"{device_type}: forms and controls verified", flush=True)
 
@@ -242,5 +263,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--device", choices=("phone", "tv"), required=True)
+    parser.add_argument("--orientation", choices=("portrait", "landscape"))
     args = parser.parse_args()
-    verify_release(args.serial, args.device)
+    verify_release(args.serial, args.device, args.orientation)

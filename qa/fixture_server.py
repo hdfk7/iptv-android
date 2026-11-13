@@ -2,6 +2,7 @@
 
 import argparse
 from datetime import datetime, timedelta, timezone
+from http.client import HTTPConnection
 import json
 import re
 import threading
@@ -18,7 +19,6 @@ class FixtureServer(ThreadingHTTPServer):
         super().__init__(address, FixtureHandler)
         self.media = media
         self.mode = "ok"
-        self.release_hold = threading.Event()
         self.events = []
         self.event_lock = threading.Lock()
 
@@ -41,10 +41,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         if path == "/control":
             self.server.mode = query.get("mode", ["ok"])[0]
-            if self.server.mode == "hold":
-                self.server.release_hold.clear()
-            elif self.server.mode == "release-hold":
-                self.server.release_hold.set()
             self.send_body(json.dumps({"mode": self.server.mode}), "application/json")
             return
         if path == "/events":
@@ -63,16 +59,23 @@ class FixtureHandler(BaseHTTPRequestHandler):
             pass
 
     def serve_fixture(self, path):
-        held = path == "/hold-list.m3u"
-        if held:
-            self.send_response(200)
-            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
-            self.end_headers()
-            self.wfile.write(b"#EXTM3U\n")
-            self.wfile.flush()
-            while not self.server.release_hold.wait(2):
-                self.wfile.write(b"# QA keepalive\n")
-                self.wfile.flush()
+        if path == "/midnight.xml":
+            zone = timezone(timedelta(minutes=int(parse_qs(urlparse(self.path).query).get("offset", ["480"])[0])))
+            midnight = datetime.now(zone).replace(hour=0, minute=0, second=0, microsecond=0)
+            entries = [
+                ("QA Yesterday Only", -120, -60), ("QA Entering Midnight", -60, 60),
+                ("QA Morning", 60, 120), ("QA Daytime", 120, 1380),
+                ("QA Leaving Midnight", 1380, 1500), ("QA Tomorrow Only", 1500, 1560),
+            ]
+
+            def stamp(minutes):
+                return (midnight + timedelta(minutes=minutes)).strftime("%Y%m%d%H%M%S %z")
+
+            rows = "".join(f'<programme channel="101" start="{stamp(a)}" stop="{stamp(b)}">'
+                           f'<title>{title}</title></programme>' for title, a, b in entries)
+            self.send_body('<tv><channel id="101"><display-name>QA Release</display-name></channel>'
+                           + rows + "</tv>", "application/xml")
+            return
         if path == "/guide.xml":
             self.send_response(302)
             self.send_header("Location", "/guide-data.xml")
@@ -80,11 +83,16 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if path == "/release.m3u":
+            if self.server.mode == "release-offline":
+                self.send_body("deliberate playlist failure", status=503)
+                return
             self.send_body("""#EXTM3U
 #EXTINF:-1 tvg-id="101",QA Release
 /fail-release.mp4
 #EXTINF:-1 tvg-id="101",QA Release
 /media.mp4?release=1
+#EXTINF:-1,QA History
+/media.mp4?history=1
 """, "application/vnd.apple.mpegurl")
             return
         if path == "/release-guide.xml" and self.server.mode == "release-offline":
@@ -148,63 +156,10 @@ class FixtureHandler(BaseHTTPRequestHandler):
         if path.startswith("/fail"):
             self.send_body("deliberate QA failure", status=404)
             return
-        if path in ["/media.mp4", "/slow.mp4"]:
-            if self.server.mode == "release-offline" and urlparse(self.path).query == "release=1":
-                self.send_body("deliberate media failure", status=503)
-                return
-            if path == "/slow.mp4":
-                time.sleep(12)
+        if path == "/media.mp4":
             self.serve_media()
             return
-        if path == "/slow-list.m3u":
-            time.sleep(10)
-        if path == "/mutable.m3u":
-            mode = self.server.mode
-            if mode == "http503":
-                self.send_body("deliberate update failure", status=503)
-                return
-            if mode == "html":
-                self.send_body("<html>not a playlist</html>", "text/html")
-                return
-            if mode == "empty":
-                self.send_body("#EXTM3U\n")
-                return
-            if mode == "hls":
-                self.send_body("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nsegment.ts\n")
-                return
-        base = f"http://10.0.2.2:{self.server.server_port}"
-        lines = ["#EXTM3U x-tvg-url=\"https://example.org/qa.xml\""]
-
-        def add(name, endpoint, group="受控测试"):
-            lines.extend([f'#EXTINF:-1 group-title="{group}",{name}', base + endpoint])
-
-        if path == "/other.m3u":
-            add("测试节目 A", "/media.mp4?origin=other")
-            add("测试节目 G", "/media.mp4?program=g")
-        elif path == "/many.m3u":
-            for number in range(1, 201):
-                add(f"节目 {number:03d}", f"/media.mp4?program={number}")
-        elif path in ["/main.m3u", "/mutable.m3u", "/slow-list.m3u", "/hold-list.m3u"]:
-            add("测试节目 A", "/fail-a.mp4", "组一")
-            add("测试节目 A", "/media.mp4?program=a", "组二")
-            add("测试节目 B", "/media.mp4?program=b")
-            add("测试节目 C", "/fail-c1.mp4")
-            add("测试节目 C", "/fail-c2.mp4")
-            for number in range(1, 10):
-                add("测试节目 D", f"/fail-d{number}.mp4")
-            add("测试节目 D", "/media.mp4?program=d")
-            add("测试节目 D", "/media.mp4?unused=after-first-success")
-            add("测试节目 E", "/slow.mp4")
-            add("测试节目 E", "/media.mp4?program=e")
-        else:
-            self.send_body("not found", status=404)
-            return
-        if held:
-            self.wfile.write(("\n".join(lines[1:]) + "\n").encode("utf-8"))
-            with self.server.event_lock:
-                self.server.events.append({"path": self.path, "at": time.time(), "event": "completed"})
-        else:
-            self.send_body("\n".join(lines) + "\n", "application/vnd.apple.mpegurl")
+        self.send_body("not found", status=404)
 
     def serve_media(self):
         size = self.server.media.stat().st_size
@@ -235,9 +190,46 @@ class FixtureHandler(BaseHTTPRequestHandler):
                 remaining -= len(block)
 
 
+class ForwardProxy(FixtureHandler):
+    def do_GET(self):
+        url = urlparse(self.path)
+        if url.scheme != "http" or url.netloc != "qa-iptv.test":
+            self.send_body("Proxy accepts only the QA fixture host", status=403)
+            return
+        with self.server.event_lock:
+            self.server.events.append({"path": self.path, "at": time.time(), "event": "proxy"})
+        target = url.path + ("?" + url.query if url.query else "")
+        connection = HTTPConnection("127.0.0.1", self.server.origin_port, timeout=40)
+        try:
+            headers = {key: value for key, value in self.headers.items() if key.lower() == "range"}
+            connection.request("GET", target, headers=headers)
+            upstream = connection.getresponse()
+            self.send_response(upstream.status)
+            for key, value in upstream.getheaders():
+                if key.lower() in {"content-length", "content-type", "accept-ranges", "content-range"}:
+                    self.send_header(key, value)
+            self.end_headers()
+            while block := upstream.read(65536):
+                self.wfile.write(block)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        finally:
+            connection.close()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--media", type=Path, required=True)
     parser.add_argument("--port", type=int, default=18764)
-    arguments = parser.parse_args()
-    FixtureServer(("127.0.0.1", arguments.port), arguments.media).serve_forever()
+    parser.add_argument("--proxy-port", type=int, default=18766)
+    args = parser.parse_args()
+    with FixtureServer(("127.0.0.1", args.port), args.media) as origin:
+        with ThreadingHTTPServer(("127.0.0.1", args.proxy_port), ForwardProxy) as proxy:
+            proxy.daemon_threads = True
+            proxy.origin_port = args.port
+            proxy.events, proxy.event_lock = origin.events, origin.event_lock
+            threading.Thread(target=origin.serve_forever, daemon=True).start()
+            try:
+                proxy.serve_forever()
+            finally:
+                origin.shutdown()

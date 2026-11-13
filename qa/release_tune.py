@@ -6,8 +6,7 @@ import re
 import statistics
 import subprocess
 import time
-from pathlib import Path
-from release_ui import Device, PACKAGE, release_artifact, verify_release_apk
+from release_ui import QA_OUTPUT, Device, PACKAGE, release_artifact, verify_release_apk
 
 TAG = "IptvPlayback:D"
 EVENT = re.compile(r"first_frame_ms=\d+ tune_ms=(\d+) recovery_ms=\d+ first_line=(true|false) tune_id=(\d+)|tune_failed_id=(\d+)")
@@ -76,7 +75,7 @@ def measure(serial, rounds, timeout):
         "max_ms": max(successful, default=None),
         "samples": samples,
     }
-    output = Path("app/build/outputs/qa")
+    output = QA_OUTPUT
     output.mkdir(parents=True, exist_ok=True)
     name = re.sub(r"[^a-zA-Z0-9_-]", "_", serial)
     (output / f"release-tune-{name}.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
