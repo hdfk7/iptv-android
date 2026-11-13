@@ -81,9 +81,31 @@ class Device:
                 raise AssertionError("IPTV was not found on the launcher pages")
         else:
             self.launcher_select("应用")
+            self.wait_for_launcher_apps()
             self.launcher_select("IPTV")
+            self.wait_for_app_focus()
+
+    def wait_for_launcher_apps(self):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            root = self.tree()
+            if any(find(root, "获取更多应用", attr) is not None for attr in ("text", "content-desc")):
+                return
+        shot = self.screenshot("tv", "launcher-apps")
+        raise AssertionError(f"Launcher Apps list did not open after pressing OK: {shot}")
+
+    def wait_for_app_focus(self):
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            focus = self.shell("dumpsys", "window").partition("mCurrentFocus=")[2].partition("\n")[0]
+            if PACKAGE in focus:
+                return
+            time.sleep(0.3)
+        shot = self.screenshot("tv", "launcher-start")
+        raise AssertionError(f"IPTV did not open after pressing OK: {shot}")
 
     def launcher_select(self, label):
+        visits = {}
         for _ in range(24):
             root = self.tree()
             focused = next((node for node in root.iter("node") if node.get("focused") == "true"), None)
@@ -92,14 +114,26 @@ class Device:
                 target = find(root, label)
             if focused is None or target is None:
                 raise AssertionError(f"Launcher focus or entry missing: {label}")
-            if find(focused, label, "content-desc") is not None or find(focused, label) is not None:
+            if label == "应用":
+                selected = launcher_apps_highlight(self.adb("exec-out", "screencap", "-p"), target)
+            else:
+                selected = find(focused, label, "content-desc") is not None or find(focused, label) is not None
+            if selected:
                 self.key("KEYCODE_DPAD_CENTER")
                 return
             left, top, right, bottom = bounds(focused)
             x1, y1, x2, y2 = bounds(target)
             x, y = (x1 + x2) // 2, (y1 + y2) // 2
             direction = ("UP" if y < top else "DOWN") if not top <= y <= bottom else ("LEFT" if x < left else "RIGHT")
+            step = (bounds(focused), bounds(target), direction)
+            if visits.get(step, 0) >= 2:
+                shot = self.screenshot("tv", "launcher-focus")
+                raise AssertionError(f"Launcher focus did not converge on {label}; check the highlighted item: {shot}")
+            visits[step] = visits.get(step, 0) + 1
             self.key("KEYCODE_DPAD_" + direction)
+            if label == "应用" and launcher_apps_highlight(self.adb("exec-out", "screencap", "-p"), target):
+                self.key("KEYCODE_DPAD_CENTER")
+                return
         raise AssertionError(f"Launcher entry is not reachable: {label}")
 
     def player_control(self, label):
@@ -118,8 +152,18 @@ class Device:
     def more(self):
         if self.device_type == "tv":
             self.key("KEYCODE_MENU")
-        elif find(self.tree(), "刷新频道") is None:
-            self.tap(self.player_control("更多"))
+        else:
+            for _ in range(3):
+                if find(self.tree(), "刷新频道") is not None:
+                    return
+                left, top, right, bottom = bounds(self.player_control("更多"))
+                self.shell("input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+                try:
+                    self.wait_for("刷新频道", timeout=3)
+                    return
+                except AssertionError:
+                    continue
+            raise AssertionError("More did not open after reopening the playback controls")
 
     def menu(self, label):
         if self.device_type == "tv":
@@ -147,7 +191,9 @@ class Device:
 
     def screenshot(self, mode, name):
         OUTPUT.mkdir(parents=True, exist_ok=True)
-        (OUTPUT / f"{mode}-{name}.png").write_bytes(self.adb("exec-out", "screencap", "-p"))
+        path = OUTPUT / f"{mode}-{name}.png"
+        path.write_bytes(self.adb("exec-out", "screencap", "-p"))
+        return path
 
 
 def find(root, label, attr="text"):
@@ -156,6 +202,29 @@ def find(root, label, attr="text"):
 
 def bounds(node):
     return tuple(map(int, re.findall(r"\d+", node.get("bounds"))))
+
+
+def launcher_apps_highlight(screenshot, node):
+    from PIL import Image
+
+    _, top, right, bottom = bounds(node)
+    with Image.open(io.BytesIO(screenshot)) as source:
+        frame = source.convert("RGB")
+        # This Android TV launcher enlarges its red Apps badge when it is selected.
+        area = frame.crop((0, max(0, top - frame.height // 8),
+                           min(frame.width // 4, right + frame.width // 20),
+                           min(frame.height, bottom + frame.height // 14)))
+        pixels = area.load()
+        min_width = int(frame.width * 0.072)
+        for y in range(area.height):
+            red_width = 0
+            for x in range(area.width):
+                red, green, blue = pixels[x, y]
+                if red > 170 and green < 90 and blue < 90:
+                    red_width += 1
+            if red_width >= min_width:
+                return True
+        return False
 
 
 def focus_color_present(screenshot, node):

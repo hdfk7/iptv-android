@@ -46,7 +46,14 @@ private suspend fun readAppRelease(address: String): AppRelease {
         require(versionCode > 0 && versionName.isNotBlank() && downloadUrl.isHttps && downloadUrl != downloaded.url && downloadUrl != manifestUrl &&
             downloadUrl.username.isEmpty() && downloadUrl.password.isEmpty())
         val notes = (manifest.opt("releaseNotes") as? String).orEmpty().trim().take(600)
-        return AppRelease(versionCode, versionName, downloadUrl.toString(), notes)
+        val sha256 = if (manifest.has("sha256")) {
+            (manifest.get("sha256") as String).also(block = { hash ->
+                require(hash.matches(Regex("[0-9a-fA-F]{64}")))
+            })
+        } else {
+            null
+        }
+        return AppRelease(versionCode, versionName, downloadUrl.toString(), notes, sha256)
     } catch (_: Exception) {
         throw AppUpdateDownloadException(R.string.app_update_manifest_invalid)
     }
@@ -66,14 +73,22 @@ private fun installerIntent(context: Context, apk: File): Intent {
 }
 
 @Suppress("DEPRECATION")
-private fun isReleaseInstalled(context: Context, release: AppRelease): Boolean {
+internal fun installedReleaseMessage(context: Context, release: AppRelease): Int? {
     val info = context.packageManager.getPackageInfo(context.packageName, 0)
     val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         info.longVersionCode
     } else {
         info.versionCode.toLong()
     }
-    return !release.differsFrom(code, info.versionName)
+    if (release.differsFrom(code, info.versionName)) {
+        return null
+    }
+    val source = info.applicationInfo?.sourceDir
+    return if (release.sha256 == null || (source != null && File(source).matchesUpdateDigest(release.sha256))) {
+        R.string.app_update_install_complete
+    } else {
+        R.string.app_update_installed_checksum_mismatch
+    }
 }
 
 @Composable
@@ -83,80 +98,97 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     val address = BuildConfig.APP_UPDATE_MANIFEST_URL
     val scope = rememberCoroutineScope()
     var checkAttempt by remember(calculation = { mutableIntStateOf(0) })
-    var result by remember(calculation = { mutableStateOf<Result<AppRelease>?>(null) })
-    var downloading by remember(calculation = { mutableStateOf(false) })
+    var state by remember(calculation = { mutableStateOf<UpdateDialogState>(UpdateDialogState.Checking) })
     val downloadProgress = remember(calculation = { MutableStateFlow<AppDownloadProgress?>(null) })
     val validation = remember(calculation = { MutableStateFlow(false) })
     val progress by downloadProgress.collectAsState()
     val validating by validation.collectAsState()
-    var downloadedApk by remember(calculation = { mutableStateOf<File?>(null) })
-    var actionMessage by remember(calculation = { mutableStateOf<Int?>(null) })
-    var recovery by remember(calculation = { mutableStateOf(UpdateAction.Download) })
-    var needsPermission by remember(calculation = { mutableStateOf(false) })
-    var installing by remember(calculation = { mutableStateOf(false) })
-    var savingAuthorization by remember(calculation = { mutableStateOf(false) })
-    val latest = result?.getOrNull()
+    val currentState = state
+    val latest = currentState.release
     val update = latest?.takeIf(predicate = { release -> release.differsFrom(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME) })
+    val ready = currentState as? UpdateDialogState.Ready
+    val downloading = currentState is UpdateDialogState.Downloading
     val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult(), onResult = { outcome ->
-        installing = false
-        val expectedRelease = update
-        actionMessage = when {
-            expectedRelease != null && isReleaseInstalled(context, expectedRelease) -> R.string.app_update_install_complete
-            outcome.resultCode == Activity.RESULT_OK -> R.string.app_update_install_unconfirmed
-            outcome.resultCode == Activity.RESULT_CANCELED -> R.string.app_update_install_cancelled
-            else -> installationFailureMessage(outcome.data?.getIntExtra("android.intent.extra.INSTALL_RESULT", 0) ?: 0)
+        val request = state as? UpdateDialogState.Installing
+        if (request != null) {
+            scope.launch(block = {
+                val installed = withContext(context = Dispatchers.IO, block = { installedReleaseMessage(context, request.release) })
+                val message = installed ?: when (outcome.resultCode) {
+                    Activity.RESULT_OK -> R.string.app_update_install_unconfirmed
+                    Activity.RESULT_CANCELED -> R.string.app_update_install_cancelled
+                    else -> installationFailureMessage(outcome.data?.getIntExtra("android.intent.extra.INSTALL_RESULT", 0) ?: 0)
+                }
+                if (state === request) {
+                    store.clearInstalling()
+                    state = request.ready.copy(message = message)
+                }
+            })
         }
     })
-    val install: (File) -> Unit = { apk ->
+    val install: (UpdateDialogState.Ready) -> Unit = { candidate ->
+        val apk = candidate.apk
         when {
             !apk.isFile || apk.length() == 0L -> {
-                downloadedApk = null
-                recovery = UpdateAction.Download
-                actionMessage = R.string.app_update_file_missing
+                state = UpdateDialogState.Available(Result.success(candidate.release), R.string.app_update_file_missing)
             }
             !context.packageManager.canRequestPackageInstalls() -> {
-                needsPermission = true
-                actionMessage = R.string.app_update_allow_install
+                state = candidate.copy(permission = InstallPermission.Required, message = R.string.app_update_allow_install)
             }
             else -> {
-                needsPermission = false
-                try {
-                    installing = true
-                    installer.launch(installerIntent(context, apk))
-                    actionMessage = R.string.app_update_install_ready
-                } catch (_: ActivityNotFoundException) {
-                    installing = false
-                    actionMessage = R.string.app_update_installer_missing
-                } catch (_: SecurityException) {
-                    installing = false
-                    actionMessage = R.string.app_update_install_access_denied
-                } catch (_: RuntimeException) {
-                    installing = false
-                    actionMessage = R.string.app_update_install_failed
-                }
+                val allowed = candidate.copy(permission = InstallPermission.Granted)
+                state = UpdateDialogState.Installing(allowed)
+                scope.launch(block = {
+                    val message = try {
+                        if (candidate.release.sha256 != null &&
+                            !withContext(context = Dispatchers.IO, block = { store.markInstalling(candidate.release) })) {
+                            R.string.app_update_save_failed
+                        } else {
+                            installer.launch(installerIntent(context, apk))
+                            null
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: ActivityNotFoundException) {
+                        R.string.app_update_installer_missing
+                    } catch (_: SecurityException) {
+                        R.string.app_update_install_access_denied
+                    } catch (_: RuntimeException) {
+                        R.string.app_update_install_failed
+                    }
+                    if (message != null) {
+                        store.clearInstalling()
+                        state = allowed.copy(message = message)
+                    }
+                })
             }
         }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult(), onResult = { _ ->
         store.clearAuthorizing()
-        needsPermission = !context.packageManager.canRequestPackageInstalls()
-        actionMessage = if (needsPermission) R.string.app_update_permission_not_granted else R.string.app_update_permission_granted
+        val candidate = state as? UpdateDialogState.Ready
+        if (candidate != null) {
+            val granted = context.packageManager.canRequestPackageInstalls()
+            state = candidate.copy(
+                permission = if (granted) InstallPermission.Granted else InstallPermission.Required,
+                message = if (granted) R.string.app_update_permission_granted else R.string.app_update_permission_not_granted
+            )
+        }
     })
-    val authorize: () -> Unit = authorize@{
-        if (savingAuthorization) {
+    val authorize: (UpdateDialogState.Ready) -> Unit = authorize@{ candidate ->
+        if ((state as? UpdateDialogState.Ready)?.permission == InstallPermission.Saving) {
             return@authorize
         }
         if (context.packageManager.canRequestPackageInstalls()) {
-            needsPermission = false
-            actionMessage = R.string.app_update_permission_granted
+            state = candidate.copy(permission = InstallPermission.Granted, message = R.string.app_update_permission_granted)
             return@authorize
         }
-        savingAuthorization = true
+        state = candidate.copy(permission = InstallPermission.Saving)
         scope.launch(block = {
             var opened = false
+            var message = candidate.message
             try {
                 if (!withContext(context = Dispatchers.IO, block = { store.markAuthorizing() })) {
-                    actionMessage = R.string.app_update_save_failed
+                    message = R.string.app_update_save_failed
                     return@launch
                 }
                 permission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()))
@@ -164,18 +196,19 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: RuntimeException) {
-                actionMessage = R.string.app_update_permission_settings_unavailable
+                message = R.string.app_update_permission_settings_unavailable
             } finally {
                 if (!opened) {
                     store.clearAuthorizing()
                 }
-                savingAuthorization = false
+                if ((state as? UpdateDialogState.Ready)?.permission == InstallPermission.Saving) {
+                    state = candidate.copy(message = message)
+                }
             }
         })
     }
     LaunchedEffect(key1 = address, key2 = checkAttempt, block = {
-        result = null
-        actionMessage = null
+        state = UpdateDialogState.Checking
         if (checkAttempt == 0) {
             val saved = withContext(context = Dispatchers.IO, block = {
                 val release = store.pendingRelease()
@@ -196,15 +229,12 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
             })
             store.clearAuthorizing()
             if (saved != null) {
-                result = Result.success(saved)
-                downloadedApk = store.apk
-                needsPermission = !context.packageManager.canRequestPackageInstalls()
-                actionMessage = if (needsPermission) R.string.app_update_allow_install else R.string.app_update_download_ready
+                state = readyUpdate(context, saved, store.apk)
                 return@LaunchedEffect
             }
         }
         if (address.isNotBlank()) {
-            result = withContext(context = Dispatchers.IO, block = {
+            val result = withContext(context = Dispatchers.IO, block = {
                 try {
                     Result.success(readAppRelease(address))
                 } catch (_: TimeoutCancellationException) {
@@ -215,48 +245,37 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
                     Result.failure(failure)
                 }
             })
+            state = UpdateDialogState.Available(result)
         }
     })
     val startDownload: () -> Unit = {
-        if (update != null && !savingAuthorization) {
-            downloadedApk = null
-            downloading = true
-            actionMessage = null
+        if (update != null && state !is UpdateDialogState.Downloading &&
+            state !is UpdateDialogState.Installing && (state as? UpdateDialogState.Ready)?.permission != InstallPermission.Saving) {
+            state = UpdateDialogState.Downloading(update)
             downloadProgress.value = null
             validation.value = false
             scope.launch(block = {
                 try {
-                    downloadedApk = downloadApk(context.applicationContext, update,
+                    val apk = downloadApk(context.applicationContext, update,
                         onProgress = { status -> downloadProgress.value = status },
                         onVerifying = { validation.value = true })
-                    needsPermission = !context.packageManager.canRequestPackageInstalls()
-                    actionMessage = if (needsPermission) R.string.app_update_allow_install else R.string.app_update_download_ready
+                    state = readyUpdate(context, update, apk)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: AppUpdateDownloadException) {
-                    actionMessage = failure.messageRes
-                    recovery = updateRecovery(failure.messageRes)
+                    state = UpdateDialogState.Available(Result.success(update), failure.messageRes, updateRecovery(failure.messageRes))
                 } catch (_: IOException) {
-                    actionMessage = R.string.app_update_download_failed
-                    recovery = UpdateAction.Download
+                    state = UpdateDialogState.Available(Result.success(update), R.string.app_update_download_failed)
                 } catch (_: Exception) {
-                    actionMessage = R.string.app_update_download_unexpected
-                    recovery = UpdateAction.Download
+                    state = UpdateDialogState.Available(Result.success(update), R.string.app_update_download_unexpected)
                 } finally {
-                    downloading = false
                     validation.value = false
                 }
             })
         }
     }
-    val primaryAction = when {
-        installing || downloading || address.isBlank() || result == null -> null
-        downloadedApk != null && needsPermission -> UpdateAction.Authorize
-        downloadedApk != null -> UpdateAction.Install
-        latest == null || update == null -> UpdateAction.Check
-        actionMessage != null -> recovery
-        else -> UpdateAction.Download
-    }
+    val primaryAction = if (address.isBlank()) null else currentState.primaryAction(update != null)
+    val actionMessage = currentState.message
     val primaryLabel = when (primaryAction) {
         UpdateAction.Check -> R.string.app_update_retry_check
         UpdateAction.Authorize -> R.string.app_update_authorize_install
@@ -279,8 +298,8 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         downloading -> stringResource(R.string.app_update_downloading)
         actionMessage != null -> stringResource(checkNotNull(actionMessage))
         address.isBlank() -> stringResource(R.string.app_update_unconfigured)
-        result == null -> stringResource(R.string.app_update_checking)
-        latest == null -> stringResource((result?.exceptionOrNull() as? AppUpdateDownloadException)?.messageRes ?: R.string.app_update_failed)
+        currentState is UpdateDialogState.Checking -> stringResource(R.string.app_update_checking)
+        latest == null -> stringResource(((currentState as? UpdateDialogState.Available)?.result?.exceptionOrNull() as? AppUpdateDownloadException)?.messageRes ?: R.string.app_update_failed)
         update == null -> stringResource(R.string.app_update_current, BuildConfig.VERSION_NAME)
         else -> stringResource(R.string.app_update_available, update.versionName)
     }
@@ -292,21 +311,31 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         validating = validating,
         fraction = fraction,
         primaryLabel = primaryLabel,
-        canRedownload = downloadedApk != null && !installing,
+        canRedownload = ready != null,
         onPrimary = {
             when (primaryAction) {
                 UpdateAction.Check -> { checkAttempt += 1 }
                 UpdateAction.Download -> { startDownload() }
-                UpdateAction.Authorize -> { authorize() }
-                UpdateAction.Install -> { downloadedApk?.let(block = install) }
+                UpdateAction.Authorize -> { ready?.let(block = authorize) }
+                UpdateAction.Install -> { ready?.let(block = install) }
                 null -> Unit
             }
         },
         onRedownload = startDownload,
         onClose = {
-            if (!savingAuthorization) {
+            if ((state as? UpdateDialogState.Ready)?.permission != InstallPermission.Saving) {
                 onClose()
             }
         }
+    )
+}
+
+private fun readyUpdate(context: Context, release: AppRelease, apk: File): UpdateDialogState.Ready {
+    val granted = context.packageManager.canRequestPackageInstalls()
+    return UpdateDialogState.Ready(
+        release,
+        apk,
+        if (granted) InstallPermission.Granted else InstallPermission.Required,
+        if (granted) R.string.app_update_download_ready else R.string.app_update_allow_install
     )
 }

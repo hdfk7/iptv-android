@@ -24,4 +24,21 @@ class ProgrammeGuideIndexTests {
         assertEquals(listOf(overnight.copy(startsAt = midnight), last), tomorrow.schedules[channel.id])
         assertEquals(ProgrammePreview("First", "Overnight"), index.snapshot(midnight - 100_000).previews[channel.id])
     }
+
+    @Test
+    fun indexedPreviewMatchesScanForOverlapGapsTiesAndReverseTime(): Unit {
+        val programmes = listOf(
+            Programme("Long", 5, 35),
+            Programme("Short", 10, 15),
+            Programme("Same start", 10, 16),
+            Programme("Evening", 30, 45),
+            Programme("Next day", 55, 65)
+        )
+        for (input in listOf(programmes, programmes.reversed(), emptyList())) {
+            val index = ProgrammePreviewIndex(input)
+            for (time in (70L downTo 0L) + (0L..70L)) {
+                assertEquals(programmePreview(input, time), index.preview(time), "time=$time, input=$input")
+            }
+        }
+    }
 }

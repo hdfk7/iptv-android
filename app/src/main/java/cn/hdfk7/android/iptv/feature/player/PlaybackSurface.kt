@@ -92,7 +92,7 @@ internal fun PlaybackSurface(
                         )
                         if (state.playback == PlaybackStatus.ERROR) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(text = stringResource(R.string.stream_error), color = Color.White, fontSize = 16.sp)
+                            Text(text = stringResource(state.playbackFailureMessage), color = Color.White, fontSize = 16.sp)
                         }
                     }
                 }

@@ -1,6 +1,7 @@
 package cn.hdfk7.android.iptv.feature.player
 
 import android.graphics.Bitmap
+import cn.hdfk7.android.iptv.R
 
 import cn.hdfk7.android.iptv.core.model.Channel
 import cn.hdfk7.android.iptv.core.model.PlaylistSource
@@ -26,6 +27,8 @@ data class PlayerState(
     val updatedAt: Long? = null,
     val stale: Boolean = false,
     val playback: PlaybackStatus = PlaybackStatus.IDLE,
+    val playbackFailureMessage: Int = R.string.stream_error,
+    val failedLineMessages: List<Int> = emptyList(),
     val previewFrameVisible: Boolean = false,
     val cachedPreviewFrame: Bitmap? = null,
     val line: Int = 0,

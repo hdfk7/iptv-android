@@ -9,6 +9,7 @@ internal enum class UpdateAction {
 internal fun updateRecovery(message: Int): UpdateAction {
     return when (message) {
         R.string.app_update_archive_mismatch,
+        R.string.app_update_download_checksum_mismatch,
         R.string.app_update_download_too_large,
         R.string.app_update_signature_mismatch,
         R.string.app_update_android_unsupported -> UpdateAction.Check

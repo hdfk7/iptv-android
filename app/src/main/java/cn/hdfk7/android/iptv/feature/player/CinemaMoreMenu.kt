@@ -194,6 +194,12 @@ private fun CinemaMoreMenuContent(
                         modifier = Modifier.padding(start = 12.dp, top = 5.dp))
                 }
             }
+            if (state.playback == PlaybackStatus.ERROR) {
+                state.failedLineMessages.forEachIndexed(action = { index, message ->
+                    Text(text = stringResource(R.string.stream_attempt_failure, index + 1, stringResource(message)),
+                        color = Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp, top = 5.dp))
+                })
+            }
         }
     )
 }

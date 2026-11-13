@@ -14,6 +14,10 @@
     <string name="loading">连接中 · %1$d/%2$d</string>
     <string name="paused">已暂停</string>
     <string name="stream_error">线路不可用</string>
+    <string name="stream_attempt_failure">第 %1$d 次尝试 · %2$s</string>
+    <string name="stream_error_timeout">线路超时，请重试</string>
+    <string name="stream_error_proxy">代理认证失败，请检查代理设置</string>
+    <string name="stream_error_decoder">无法解码，请重试或切换频道</string>
     <string name="library_title">源管理</string>
     <string name="source_current">正在使用</string>
     <string name="source_use">启用</string>
@@ -86,6 +90,8 @@
     <string name="app_update_file_missing">安装包已丢失或无法读取</string>
     <string name="app_update_installer_missing">系统安装器不可用</string>
     <string name="app_update_install_access_denied">系统拒绝安装</string>
+    <string name="app_update_download_checksum_mismatch">下载的安装包与更新清单不一致，请重新检查更新</string>
+    <string name="app_update_installed_checksum_mismatch">系统实际安装的包与本次下载不一致</string>
     <string name="app_update_install_complete">更新成功</string>
     <string name="app_update_install_unconfirmed">更新结果未确认</string>
     <string name="app_update_install_cancelled">安装未完成，安装包已保留</string>

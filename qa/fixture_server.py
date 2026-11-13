@@ -83,6 +83,20 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if path == "/many-failed-lines.m3u":
+            rows = "".join(f"#EXTINF:-1,QA Failed Lines\n/fail-line-{line}.mp4\n" for line in range(16))
+            self.send_body("#EXTM3U\n" + rows, "application/vnd.apple.mpegurl")
+            return
+        if path == "/tune.m3u":
+            self.send_body("""#EXTM3U
+#EXTINF:-1,QA Tune Direct
+/media.mp4?tune=direct
+#EXTINF:-1,QA Tune Recovery
+/fail-tune.mp4
+#EXTINF:-1,QA Tune Recovery
+/media.mp4?tune=backup
+""", "application/vnd.apple.mpegurl")
+            return
         if path == "/release.m3u":
             if self.server.mode == "release-offline":
                 self.send_body("deliberate playlist failure", status=503)

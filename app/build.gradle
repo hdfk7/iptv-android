@@ -1,12 +1,13 @@
 import com.android.build.api.artifact.SingleArtifact
 import groovy.json.JsonOutput
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
 }
 
-def releaseVersion = '1.3.6'
+def releaseVersion = '1.3.7'
 def releaseNotesFile = layout.projectDirectory.file("release-notes/${releaseVersion}.txt")
 def releaseNotes = providers.fileContents(releaseNotesFile).asText.map { notes -> notes.trim() }.orElse("")
 
@@ -42,7 +43,7 @@ android {
         applicationId = 'cn.hdfk7.android.iptv'
         minSdk = 26
         targetSdk = 34
-        versionCode = 31
+        versionCode = 32
         versionName = releaseVersion
         def updateManifestUrl = providers.gradleProperty("APP_UPDATE_MANIFEST_URL").getOrElse("")
         buildConfigField "String", "APP_UPDATE_MANIFEST_URL", JsonOutput.toJson(updateManifestUrl)
@@ -108,12 +109,22 @@ androidComponents {
                     throw new GradleException("Expected one APK for the update manifest")
                 }
                 def apk = artifacts.elements.first()
+                def apkFile = new File(apk.outputFile)
+                def digest = MessageDigest.getInstance("SHA-256")
+                apkFile.withInputStream { stream ->
+                    byte[] buffer = new byte[64 * 1024]
+                    int count
+                    while ((count = stream.read(buffer)) != -1) {
+                        digest.update(buffer, 0, count)
+                    }
+                }
                 def target = manifestFile.get().asFile
                 target.parentFile.mkdirs()
                 def manifest = [
                     versionCode: apk.versionCode,
                     versionName: apk.versionName,
-                    apkUrl: new File(apk.outputFile).name
+                    apkUrl: apkFile.name,
+                    sha256: digest.digest().encodeHex().toString()
                 ]
                 def notes = releaseNotes.get()
                 if (!notes.isEmpty()) {

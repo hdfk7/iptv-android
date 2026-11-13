@@ -8,6 +8,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -146,7 +147,32 @@ internal suspend fun downloadApk(context: Context, release: AppRelease, onProgre
         })
     })
 
+internal fun File.matchesUpdateDigest(expected: String?): Boolean {
+    if (expected == null) {
+        return true
+    }
+    return try {
+        val digest = MessageDigest.getInstance("SHA-256")
+        inputStream().use(block = { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) {
+                    break
+                }
+                digest.update(buffer, 0, count)
+            }
+        })
+        digest.digest().toHexString().equals(expected, ignoreCase = true)
+    } catch (_: IOException) {
+        false
+    }
+}
+
 internal fun validateUpdateApk(context: Context, pending: File, release: AppRelease): Unit {
+    if (!pending.matchesUpdateDigest(release.sha256)) {
+        throw AppUpdateDownloadException(R.string.app_update_download_checksum_mismatch)
+    }
     @Suppress("DEPRECATION")
     val signingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         PackageManager.GET_SIGNING_CERTIFICATES

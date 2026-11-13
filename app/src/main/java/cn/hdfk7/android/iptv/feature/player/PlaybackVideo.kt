@@ -6,6 +6,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.SurfaceView
+import android.util.Log
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,17 +18,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import cn.hdfk7.android.iptv.BuildConfig
 import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 
-internal class PreviewFrameRequest(val key: String, val standby: Boolean)
+internal class PreviewFrameRequest(val key: String, val standby: Boolean, val tuneId: Int)
 
 /** Keep the video surface attached while opening and closing controls. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 internal fun PlaybackVideo(viewModel: PlayerViewModel): Unit {
     var surface by remember(calculation = { mutableStateOf<SurfaceView?>(null) })
+    val handler = remember(calculation = { Handler(Looper.getMainLooper()) })
     val request = viewModel.previewFrameRequest
     LaunchedEffect(surface, request, block = {
         val videoSurface = surface ?: return@LaunchedEffect
@@ -40,21 +45,31 @@ internal fun PlaybackVideo(viewModel: PlayerViewModel): Unit {
             (videoSurface.height * scale).toInt().coerceAtLeast(1),
             Bitmap.Config.ARGB_8888
         )
-        val handler = Handler(Looper.getMainLooper())
-        val deadline = SystemClock.elapsedRealtime() + 2_000L
-        do {
-            if (copyFrame(videoSurface, sample, handler)) {
-                if (hasVisiblePicture(sample)) {
-                    viewModel.finishPreviewFrame(request, frame = sample)
-                    return@LaunchedEffect
+        val startedAt = SystemClock.elapsedRealtime()
+        val deadline = startedAt + 2_000L
+        var copies = 0
+        try {
+            do {
+                copies += 1
+                if (copyFrame(videoSurface, sample, handler)) {
+                    val visible = withContext(context = Dispatchers.Default, block = { hasVisiblePicture(sample) })
+                    if (visible) {
+                        viewModel.finishPreviewFrame(request, frame = sample)
+                        return@LaunchedEffect
+                    }
+                    if (request.standby) {
+                        viewModel.skipBlackPreviewFrame(request)
+                    }
                 }
-                if (request.standby) {
-                    viewModel.skipBlackPreviewFrame(request)
-                }
+                delay(80)
+            } while (SystemClock.elapsedRealtime() < deadline)
+            viewModel.finishPreviewFrame(request, frame = null)
+        } finally {
+            if (BuildConfig.APP_DEBUG_SWITCH) {
+                Log.d("IptvPlayback", "preview_copies=$copies preview_ms=" +
+                    (SystemClock.elapsedRealtime() - startedAt) + " standby=" + request.standby + " preview_tune_id=" + request.tuneId)
             }
-            delay(80)
-        } while (SystemClock.elapsedRealtime() < deadline)
-        viewModel.finishPreviewFrame(request, frame = null)
+        }
     })
     AndroidView(
         modifier = Modifier.fillMaxSize(),

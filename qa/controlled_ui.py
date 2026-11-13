@@ -111,9 +111,23 @@ def proxy_playlist(device, origin_port, guide_url, since):
 def programme_rows(root):
     rows = set()
     for row in root.iter("node"):
+        # Compose may expose the row as merged semantics or as separate text cells.
+        for value in (row.get("text"), row.get("content-desc")):
+            match = re.fullmatch(r"(\d{2}:\d{2})(?:\s*,\s*|\s+)(\S.*)", value or "", re.S)
+            if match:
+                rows.add(match.groups())
         cells = [item.get("text") for item in row.iter("node") if item.get("text")]
         if len(cells) == 2 and re.fullmatch(r"\d{2}:\d{2}", cells[0]):
             rows.add(tuple(cells))
+        # Some phone accessibility trees flatten each row into sibling text nodes.
+        siblings = [child for child in row.findall("node") if child.get("text")]
+        for clock, title in zip(siblings, siblings[1:]):
+            if not re.fullmatch(r"\d{2}:\d{2}", clock.get("text")) or not clock.get("bounds") or not title.get("bounds"):
+                continue
+            _, top, right, bottom = bounds(clock)
+            title_left, title_top, _, title_bottom = bounds(title)
+            if title_left >= right and min(bottom, title_bottom) > max(top, title_top):
+                rows.add((clock.get("text"), title.get("text")))
     return rows
 
 
@@ -159,13 +173,13 @@ def verify_midnight(device):
 
 
 def guide_address(device):
-    offset = device.shell("date", "+%z").strip()
-    assert re.fullmatch(r"[+-]\d{4}", offset), offset
+    reading = device.shell("date", "+%Y-%m-%dT%z").strip()
+    match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})T([+-]\d{4})", reading)
+    assert match is not None, reading
+    day, offset = match.groups()
     minutes = int(offset[1:3]) * 60 + int(offset[3:])
     if offset[0] == "-":
         minutes = -minutes
-    day = device.shell("date", "+%Y-%m-%d").strip()
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", day), day
     return f"http://qa-iptv.test/midnight.xml?offset={minutes}&device={device.device_type}&date={day}"
 
 

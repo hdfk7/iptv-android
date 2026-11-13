@@ -55,6 +55,7 @@ internal class ProgrammeGuideIndex(channels: List<Channel>, data: Map<GuideRef, 
     private class GuideTimeline(val programmes: List<Programme>) {
         private val boundaries = programmes.flatMap(transform = { item -> listOf(item.startsAt, item.endsAt) })
             .distinct().sorted().toLongArray()
+        private val previewIndex = ProgrammePreviewIndex(programmes)
         private var computedAt = Long.MIN_VALUE
         var schedule = emptyList<Programme>()
         var preview = ProgrammePreview(null, null)
@@ -66,7 +67,7 @@ internal class ProgrammeGuideIndex(channels: List<Channel>, data: Map<GuideRef, 
             if (now >= computedAt && now < nextChangeAt) {
                 return
             }
-            preview = programmePreview(programmes, now)
+            preview = previewIndex.preview(now)
             val match = boundaries.binarySearch(now)
             val next = if (match >= 0) match + 1 else -match - 1
             nextChangeAt = boundaries.getOrNull(next) ?: Long.MAX_VALUE

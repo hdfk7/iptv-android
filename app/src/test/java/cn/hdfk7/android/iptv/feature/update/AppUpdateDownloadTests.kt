@@ -5,17 +5,35 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import cn.hdfk7.android.iptv.R
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class AppUpdateDownloadTests {
+    @Test
+    fun digestRejectsDifferentBytesEvenWhenFileNameAndSizeMatch(): Unit {
+        val apk = Files.createTempFile("iptv-update-", ".apk").toFile()
+        try {
+            val expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            apk.writeText("abc")
+            assertTrue(apk.matchesUpdateDigest(expected.uppercase()))
+            apk.writeText("abd")
+            assertFalse(apk.matchesUpdateDigest(expected))
+            assertTrue(apk.matchesUpdateDigest(null))
+        } finally {
+            apk.delete()
+        }
+    }
+
     @Test
     fun redirectedManifestReportsTheFinalUrlForRelativeApks(): Unit = runBlocking(block = {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
