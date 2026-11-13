@@ -21,6 +21,7 @@ class RefreshEngineTests {
         }, { 200L })
         val result = engine.refresh()
         assertFalse(result.failed)
+        assertEquals(0, store.reads)
         assertEquals("New", store.value?.channels?.single()?.name)
         assertEquals(200L, result.snapshot?.updatedAt)
     })
@@ -38,6 +39,7 @@ class RefreshEngineTests {
         val result = RefreshEngine(store, { _ -> throw IOException("offline") }, { 200L }).refresh()
         assertTrue(result.failed)
         assertEquals(old, result.snapshot)
+        assertEquals(1, store.reads)
     })
 
     @Test
@@ -62,13 +64,18 @@ class RefreshEngineTests {
 
     @Test
     fun staleBoundaryAndClockRollbackAreDetected() {
-        assertFalse(RefreshEngine.isStale(old, old.updatedAt + RefreshEngine.DAY_MILLIS - 1))
-        assertTrue(RefreshEngine.isStale(old, old.updatedAt + RefreshEngine.DAY_MILLIS))
-        assertTrue(RefreshEngine.isStale(old, 99))
+        assertFalse(RefreshEngine.isStale(old.updatedAt, old.updatedAt))
+        assertFalse(RefreshEngine.isStale(old.updatedAt, old.updatedAt + RefreshEngine.DAY_MILLIS - 1))
+        assertTrue(RefreshEngine.isStale(old.updatedAt, old.updatedAt + RefreshEngine.DAY_MILLIS))
+        assertTrue(RefreshEngine.isStale(old.updatedAt, old.updatedAt - 1))
     }
 
     private class MemoryStore(var value: PlaylistSnapshot?, private val failWrite: Boolean = false) : PlaylistStore {
+        var reads = 0
+            private set
+
         override fun read(): PlaylistSnapshot? {
+            reads += 1
             return value
         }
 

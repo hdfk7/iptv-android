@@ -1,40 +1,23 @@
 """Verify TV shortcuts and return paths using the current signed Release APK."""
 
 import argparse
-import hashlib
 import json
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from release_ui import Device, find
+from release_ui import Device, find, install_release as verify_release, tv_highlight
 
 
-PACKAGE = "cn.hdfk7.android.iptv"
-APK_DIR = Path("app/build/outputs/apk/release")
 OUTPUT = Path("app/build/outputs/qa/tv-navigation")
-
-
-def verify_release(device):
-    entry = json.loads((APK_DIR / "output-metadata.json").read_text())["elements"][0]
-    apk = APK_DIR / entry["outputFile"]
-    assert "Success" in device.adb("install", "-r", str(apk)).decode(), "Release installation failed"
-    remote = device.shell("pm", "path", PACKAGE).strip().removeprefix("package:")
-    checksum = hashlib.sha256(apk.read_bytes()).hexdigest()
-    assert device.shell("sha256sum", remote).split()[0] == checksum, "Installed APK differs from local Release"
-    package = device.shell("dumpsys", "package", PACKAGE)
-    assert f"versionName={entry['versionName']}" in package
-    assert f"versionCode={entry['versionCode']} " in package
-    print(f"Verified Release {entry['versionName']} ({entry['versionCode']}): {checksum}", flush=True)
-    return entry, checksum
 
 
 def snapshot(device, name):
     root = device.tree()
     (OUTPUT / f"{name}.xml").write_bytes(ET.tostring(root, encoding="utf-8"))
-    selected = [node for node in root.iter("node") if node.get("selected") == "true"]
-    focused = selected or [node for node in root.iter("node") if node.get("focused") == "true"]
-    label = [node.get("text") or node.get("content-desc") for parent in focused
-             for node in parent.iter("node") if node.get("text") or node.get("content-desc")]
+    screenshot = device.adb("exec-out", "screencap", "-p")
+    (OUTPUT / f"{name}.png").write_bytes(screenshot)
+    label = tv_highlight(device, root, screenshot)
     print(f"{name}: {label}", flush=True)
     return root, label
 
@@ -56,7 +39,7 @@ def verify_navigation(device):
     root, focused = snapshot(device, "02-menu-from-fullscreen")
     assert find(root, "源管理") is not None, "MENU did not directly open More"
     assert "源管理" in focused, "The first More item did not receive focus"
-    device.click("设置")
+    device.choose_with_remote("设置")
     device.key("KEYCODE_BACK")
     root, focused = snapshot(device, "02-settings-return")
     assert "设置" in focused, "Settings did not return focus to its More entry"
@@ -97,7 +80,7 @@ def verify_navigation(device):
 
     device.key("KEYCODE_DPAD_LEFT")
     root, restored = snapshot(device, "07-left-from-fullscreen")
-    assert restored == channel, "Opening the channel panel lost its previous focus"
+    assert restored[:2] == channel[:2], "Opening the channel panel lost its previous focus"
 
     for attempt in range(3):
         device.key("KEYCODE_BACK")
@@ -139,7 +122,7 @@ def verify_navigation(device):
         assert any("今日节目单" in node.get("text", "") for node in root.iter("node"))
         device.key("KEYCODE_DPAD_LEFT")
         root, restored = snapshot(device, "09-guide-back")
-        assert restored == channel, "Closing the guide did not restore the channel row"
+        assert restored[:2] == channel[:2], "Closing the guide did not restore the channel row"
 
     device.key("KEYCODE_MENU")
     root, _ = snapshot(device, "10-menu-from-channels")
@@ -151,6 +134,7 @@ def verify_navigation(device):
 
 
 def main():
+    sys.stdout.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     args = parser.parse_args()

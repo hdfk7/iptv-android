@@ -9,13 +9,16 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.xmlpull.v1.XmlPullParser
 
 private val xmltvDate = DateTimeFormatter.ofPattern("uuuuMMddHHmmss")
     .withResolverStyle(ResolverStyle.STRICT)
+private val xmltvTimeSeparator = Regex("\\s+")
 
 internal fun xmltvTime(value: String?): Long? {
-    val parts = value?.trim()?.split(Regex("\\s+"), limit = 2) ?: return null
+    val parts = value?.trim()?.split(xmltvTimeSeparator, limit = 2) ?: return null
     return runCatching(block = {
         val local = LocalDateTime.parse(parts.first(), xmltvDate)
         val offset = parts.getOrNull(1)?.let(block = ZoneOffset::of) ?: ZoneOffset.UTC
@@ -23,7 +26,9 @@ internal fun xmltvTime(value: String?): Long? {
     }).getOrNull()
 }
 
-internal fun parseXmltv(text: String, refs: List<GuideRef>, now: Long): Map<GuideRef, List<Programme>> {
+internal suspend fun parseXmltv(text: String, refs: List<GuideRef>, now: Long): Map<GuideRef, List<Programme>> {
+    val context = currentCoroutineContext()
+    context.ensureActive()
     val parser = Xml.newPullParser()
     parser.setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
     parser.setInput(text.removePrefix("\uFEFF").reader())
@@ -42,7 +47,13 @@ internal fun parseXmltv(text: String, refs: List<GuideRef>, now: Long): Map<Guid
     val horizon = now + 48 * 60 * 60 * 1000L
     val dayStart = programmeDay(now).first
     var event = parser.nextToken()
+    var eventsUntilCancellationCheck = 256
     while (event != XmlPullParser.END_DOCUMENT) {
+        eventsUntilCancellationCheck -= 1
+        if (eventsUntilCancellationCheck == 0) {
+            context.ensureActive()
+            eventsUntilCancellationCheck = 256
+        }
         when {
             event == XmlPullParser.START_TAG && parser.depth == 1 -> {
                 require(parser.name == "tv")
@@ -98,6 +109,7 @@ internal fun parseXmltv(text: String, refs: List<GuideRef>, now: Long): Map<Guid
         }
         event = parser.nextToken()
     }
+    context.ensureActive()
     require(root)
     val sorted = result.mapValues(transform = { entry -> entry.value.distinct().sortedBy(selector = Programme::startsAt) })
     return refs.associateWith(valueSelector = { ref -> sorted[resolved?.get(ref)].orEmpty() })

@@ -53,7 +53,7 @@ class PlaylistParser {
                 group = attribute(metadata, groupTitle)
                 channelGuideId = attribute(metadata, guideId).trim()
                 latency = if (readResponseTime && separator >= 0) {
-                    attribute(line.substring(0, separator), responseTime).toIntOrNull()?.takeIf(predicate = { time -> time in 1..60_000 })
+                    attribute(metadata, responseTime).toIntOrNull()?.takeIf(predicate = { time -> time in 1..60_000 })
                 } else {
                     null
                 }
@@ -65,7 +65,8 @@ class PlaylistParser {
                 }
                 val uri = runCatching(block = { base.resolve(line) }).getOrNull()
                 if (uri != null && validHttp(uri)) {
-                    val entry = channels.getOrPut(key = ChannelNames.key(channelName), defaultValue = { Entry(ChannelNames.display(channelName), group) })
+                    val key = ChannelNames.key(channelName)
+                    val entry = channels.getOrPut(key = key, defaultValue = { Entry(ChannelNames.display(channelName, key), group) })
                     if (entry.group.isBlank()) {
                         entry.group = group
                     }

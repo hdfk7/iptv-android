@@ -10,7 +10,7 @@
     <string name="refresh_error">更新失败</string>
     <string name="empty">暂无节目</string>
     <string name="updated">列表更新：%1$s</string>
-    <string name="stale">缓存已超过一天</string>
+    <string name="stale">缓存已过期</string>
     <string name="loading">连接中 · %1$d/%2$d</string>
     <string name="paused">已暂停</string>
     <string name="stream_error">线路不可用</string>

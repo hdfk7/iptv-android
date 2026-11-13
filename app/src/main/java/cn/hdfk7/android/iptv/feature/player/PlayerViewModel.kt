@@ -218,7 +218,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     selectedName = activeChannel?.name,
                     selectedSourceName = activeChannel?.sourceName,
                     updatedAt = snapshot,
-                    stale = snapshot != null && System.currentTimeMillis() - snapshot >= RefreshEngine.DAY_MILLIS,
+                    stale = snapshot != null && RefreshEngine.isStale(snapshot, System.currentTimeMillis()),
                     refreshing = catalog.refreshing,
                     refreshFailed = catalog.refreshFailed,
                     message = if (catalog.storageFailed) R.string.storage_error else state.value.message

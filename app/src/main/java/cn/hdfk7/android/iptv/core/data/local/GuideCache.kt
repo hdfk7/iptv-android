@@ -3,7 +3,6 @@ package cn.hdfk7.android.iptv.core.data.local
 import android.util.AtomicFile
 import java.io.File
 import java.io.IOException
-import java.security.MessageDigest
 
 internal class GuideCache(private val directory: File) {
     @Synchronized
@@ -45,8 +44,7 @@ internal class GuideCache(private val directory: File) {
     }
 
     private fun file(address: String): AtomicFile {
-        val hash = MessageDigest.getInstance("SHA-256").digest(address.toByteArray())
-            .joinToString(separator = "", transform = { byte -> "%02x".format(byte) })
+        val hash = cacheKey(address)
         return AtomicFile(File(directory, "$hash.xml"))
     }
 

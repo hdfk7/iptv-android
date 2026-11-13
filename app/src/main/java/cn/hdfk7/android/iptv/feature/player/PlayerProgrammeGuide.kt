@@ -11,7 +11,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -73,6 +75,7 @@ internal class PlayerProgrammeGuide(
                     if (feed != null) {
                         result.putAll(parseXmltv(feed, entries, now))
                         if (!fromCache) {
+                            currentCoroutineContext().ensureActive()
                             cache.write(address, feed)
                         }
                     }

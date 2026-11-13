@@ -48,12 +48,23 @@ import cn.hdfk7.android.iptv.core.ui.components.FormTwoColumnWidth
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 import cn.hdfk7.android.iptv.core.ui.components.tvTextFieldColors
 import cn.hdfk7.android.iptv.core.ui.components.tvPanelNavigation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class ProxyControl { Power, Host, Port, Username, Password, Save, Cancel }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var saving by remember(calculation = { mutableStateOf(false) })
+    val close: () -> Unit = {
+        if (!saving) {
+            onClose()
+        }
+    }
     var draft by remember(calculation = { mutableStateOf(store.current ?: ProxySettings()) })
     var error by remember(calculation = { mutableStateOf<Int?>(if (store.current == null) R.string.proxy_read_error else null) })
     val updateDraft: (ProxySettings) -> Unit = { updated ->
@@ -72,25 +83,38 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         }
     }
     val save: () -> Unit = save@{
-        if (!draft.valid()) {
+        if (saving) {
+            return@save
+        }
+        val settings = draft
+        if (!settings.valid()) {
             error = R.string.proxy_invalid
             return@save
         }
         val previous = store.current
-        if (draft != previous) {
+        if (settings == previous) {
+            onClose()
+            return@save
+        }
+        saving = true
+        scope.launch(block = {
             try {
-                store.save(draft)
+                withContext(context = Dispatchers.IO, block = { store.save(settings) })
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: Exception) {
                 error = R.string.storage_error
-                return@save
+                return@launch
+            } finally {
+                saving = false
             }
-            if (previous == null || previous.enabled || draft.enabled) {
+            if (previous == null || previous.enabled || settings.enabled) {
                 onSaved()
             }
-        }
-        onClose()
+            onClose()
+        })
     }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false), content = {
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false), content = {
         val inputMode = LocalInputModeManager.current
         val view = LocalView.current
         val focus = remember(calculation = { FocusRequester() })
@@ -157,7 +181,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
             when (selectedControl) {
                 ProxyControl.Power -> toggle()
                 ProxyControl.Save -> save()
-                ProxyControl.Cancel -> onClose()
+                ProxyControl.Cancel -> close()
                 else -> editing = selectedControl
             }
         })
@@ -290,7 +314,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                         Row(horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
                             TvIconButton(description = stringResource(R.string.proxy_save), icon = R.drawable.ic_check, onClick = save,
                                 modifier = buttonModifier(ProxyControl.Save), focusHighlight = highlighted(ProxyControl.Save))
-                            TvIconButton(description = stringResource(R.string.proxy_cancel), icon = R.drawable.ic_close, onClick = onClose,
+                            TvIconButton(description = stringResource(R.string.proxy_cancel), icon = R.drawable.ic_close, onClick = close,
                                 modifier = buttonModifier(ProxyControl.Cancel), focusHighlight = highlighted(ProxyControl.Cancel))
                         })
                     }

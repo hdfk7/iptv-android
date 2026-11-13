@@ -81,16 +81,20 @@ internal fun PlaybackVideo(viewModel: PlayerViewModel): Unit {
 private fun hasVisiblePicture(frame: Bitmap): Boolean {
     val columns = 48
     val rows = 27
+    val minimumVisiblePixels = columns * rows / 20
     var visiblePixels = 0
     for (row in 0 until rows) {
         for (column in 0 until columns) {
             val color = frame.getPixel(column * frame.width / columns, row * frame.height / rows)
             if (maxOf((color shr 16) and 255, (color shr 8) and 255, color and 255) > 24) {
                 visiblePixels += 1
+                if (visiblePixels >= minimumVisiblePixels) {
+                    return true
+                }
             }
         }
     }
-    return visiblePixels >= columns * rows / 20
+    return false
 }
 
 private suspend fun copyFrame(surface: SurfaceView, sample: Bitmap, handler: Handler): Boolean {

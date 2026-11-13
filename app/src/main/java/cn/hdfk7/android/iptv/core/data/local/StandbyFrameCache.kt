@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.util.AtomicFile
 import java.io.File
 import java.io.IOException
-import java.security.MessageDigest
 
 internal class StandbyFrameCache(private val directory: File) {
     private companion object {
@@ -58,8 +57,7 @@ internal class StandbyFrameCache(private val directory: File) {
     }
 
     private fun file(key: String): AtomicFile {
-        val hash = MessageDigest.getInstance("SHA-256").digest(key.toByteArray())
-            .joinToString(separator = "", transform = { byte -> "%02x".format(byte) })
+        val hash = cacheKey(key)
         return AtomicFile(File(directory, "$hash.jpg"))
     }
 }

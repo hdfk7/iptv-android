@@ -2,6 +2,7 @@ package cn.hdfk7.android.iptv.core.data.repository
 
 import cn.hdfk7.android.iptv.core.data.local.FileLibraryStore
 import cn.hdfk7.android.iptv.core.data.local.FilePlaylistStore
+import cn.hdfk7.android.iptv.core.data.local.cacheKey
 import cn.hdfk7.android.iptv.core.data.network.PlaylistDownloader
 import cn.hdfk7.android.iptv.core.model.CatalogState
 import cn.hdfk7.android.iptv.core.model.Channel
@@ -21,7 +22,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 interface LibraryStore {
@@ -42,11 +42,7 @@ class PlaylistRepository(
         restoreActiveSource: () -> Boolean = { false }
     ) : this(
         FileLibraryStore(directory),
-        { source ->
-            val digest = MessageDigest.getInstance("SHA-256").digest(source.url.toByteArray())
-            val hash = digest.joinToString(separator = "", transform = { byte -> "%02x".format(byte) })
-            FilePlaylistStore(directory, "playlist-$hash.json")
-        },
+        { source -> FilePlaylistStore(directory, "playlist-${cacheKey(source.url)}.json") },
         downloader::download,
         System::currentTimeMillis,
         restoreActiveSource
@@ -60,6 +56,7 @@ class PlaylistRepository(
     private var library = LibraryRules.defaults()
     private var loaded = false
     private var storageFailed = false
+    private var publishedSourceChannels: List<Channel> = emptyList()
     private val mutableState = MutableStateFlow(CatalogState())
     val state = mutableState.asStateFlow()
 
@@ -245,16 +242,20 @@ class PlaylistRepository(
     }
 
     private fun publish() {
+        val previous = mutableState.value
         val favoritesMode = library.activeSourceId == SourceLibrary.FAVORITES_ID
         val source = library.sources.firstOrNull(predicate = { entry -> entry.id == library.activeSourceId })
-        val channels = if (favoritesMode) {
+        val sourceChannels = source?.let(block = { current -> snapshots[current.id]?.channels }).orEmpty()
+        val channels = if (previous.library == library && publishedSourceChannels == sourceChannels) {
+            previous.channels
+        } else if (favoritesMode) {
             val sources = library.sources.associateBy(keySelector = { entry -> entry.id })
             val contributions = library.favorites.map(transform = { channel ->
                 withGuideAddress(channel, sources[channel.sourceId]?.guideAddress)
             })
             ChannelAggregation.merge(contributions, SourceLibrary.FAVORITES_ID)
         } else if (source != null) {
-            snapshots[source.id]?.channels.orEmpty().map(transform = { channel ->
+            sourceChannels.map(transform = { channel ->
                 withGuideAddress(channel.copy(sourceId = source.id, sourceName = source.name), source.guideAddress)
             })
         } else {
@@ -266,6 +267,7 @@ class PlaylistRepository(
             setOf(library.activeSourceId)
         }
         val updatedAt = relevantIds.mapNotNull(transform = { id -> snapshots[id]?.updatedAt }).minOrNull()
+        publishedSourceChannels = sourceChannels
         mutableState.value = CatalogState(
             library = library,
             loaded = loaded,

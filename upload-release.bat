@@ -83,8 +83,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "STAGED_APK=.%APK_NAME%.upload"
-set "STAGED_MANIFEST=.latest-%APK_NAME%.upload"
+set "STAGE="
+for /f "delims=" %%d in ('ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && mktemp -d .release-upload.XXXXXXXX"') do set "STAGE=%%d"
+if not defined STAGE (
+    echo [error] could not create staging directory
+    exit /b 1
+)
+set "STAGED_APK=%STAGE%/%APK_NAME%"
+set "STAGED_MANIFEST=%STAGE%/latest.json"
 scp -o BatchMode=yes "%APK%" "%TARGET%:%REMOTE_DIR%/%STAGED_APK%"
 if errorlevel 1 (
     echo [error] APK upload failed
@@ -95,22 +101,11 @@ if errorlevel 1 (
     echo [error] manifest upload failed
     exit /b 1
 )
-ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && test -s '%STAGED_APK%' && test -s '%STAGED_MANIFEST%' && mv -f -- '%STAGED_APK%' '%APK_NAME%' && mv -f -- '%STAGED_MANIFEST%' latest.json"
+ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && (timeout 60 flock 9 && test -s '%STAGED_APK%' && test -s '%STAGED_MANIFEST%' && mv -f -- '%STAGED_APK%' '%APK_NAME%' && mv -f -- '%STAGED_MANIFEST%' latest.json && rmdir -- '%STAGE%' && find . -maxdepth 1 -type f -name 'IPTV-release-*.apk' -not -name '%APK_NAME%' -delete && ls -lh -- '%APK_NAME%' latest.json) 9>.release.lock"
 if errorlevel 1 (
     echo [error] could not activate release
     exit /b 1
 )
-
-echo -- remove older APKs
-ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && find . -maxdepth 1 -type f -name 'IPTV-release-*.apk' -not -name '%APK_NAME%' -delete"
-if errorlevel 1 (
-    echo [error] release published but cleanup failed
-    exit /b 1
-)
-
-echo -- files on server
-ssh -o BatchMode=yes "%TARGET%" "ls -lh '%REMOTE_DIR%/%APK_NAME%' '%REMOTE_DIR%/latest.json'"
-if errorlevel 1 exit /b 1
 
 echo -- done
 echo    %PUBLIC_BASE%/%APK_NAME%

@@ -90,6 +90,7 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     var recovery by remember(calculation = { mutableStateOf(UpdateAction.Download) })
     var needsPermission by remember(calculation = { mutableStateOf(false) })
     var installing by remember(calculation = { mutableStateOf(false) })
+    var savingAuthorization by remember(calculation = { mutableStateOf(false) })
     val latest = result?.getOrNull()
     val update = latest?.takeIf(predicate = { release -> release.versionCode > BuildConfig.VERSION_CODE })
     val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult(), onResult = { outcome ->
@@ -137,20 +138,36 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         needsPermission = !context.packageManager.canRequestPackageInstalls()
         actionMessage = if (needsPermission) R.string.app_update_permission_not_granted else R.string.app_update_permission_granted
     })
-    val authorize: () -> Unit = {
+    val authorize: () -> Unit = authorize@{
+        if (savingAuthorization) {
+            return@authorize
+        }
         if (context.packageManager.canRequestPackageInstalls()) {
             needsPermission = false
             actionMessage = R.string.app_update_permission_granted
-        } else if (store.markAuthorizing()) {
-            try {
-                permission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()))
-            } catch (_: RuntimeException) {
-                store.clearAuthorizing()
-                actionMessage = R.string.app_update_permission_settings_unavailable
-            }
-        } else {
-            actionMessage = R.string.app_update_save_failed
+            return@authorize
         }
+        savingAuthorization = true
+        scope.launch(block = {
+            var opened = false
+            try {
+                if (!withContext(context = Dispatchers.IO, block = { store.markAuthorizing() })) {
+                    actionMessage = R.string.app_update_save_failed
+                    return@launch
+                }
+                permission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()))
+                opened = true
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: RuntimeException) {
+                actionMessage = R.string.app_update_permission_settings_unavailable
+            } finally {
+                if (!opened) {
+                    store.clearAuthorizing()
+                }
+                savingAuthorization = false
+            }
+        })
     }
     LaunchedEffect(key1 = address, key2 = checkAttempt, block = {
         result = null
@@ -197,7 +214,7 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         }
     })
     val startDownload: () -> Unit = {
-        if (update != null) {
+        if (update != null && !savingAuthorization) {
             downloadedApk = null
             downloading = true
             actionMessage = null
@@ -282,6 +299,10 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
             }
         },
         onRedownload = startDownload,
-        onClose = onClose
+        onClose = {
+            if (!savingAuthorization) {
+                onClose()
+            }
+        }
     )
 }

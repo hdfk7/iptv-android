@@ -1,6 +1,7 @@
 package cn.hdfk7.android.iptv.core.data.repository
 
 import cn.hdfk7.android.iptv.core.model.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
@@ -13,6 +14,37 @@ class PlaylistRepositoryTests {
     private val first = PlaylistSource("a", "First", "https://example.org/a.m3u")
     private val second = PlaylistSource("b", "Second", "https://example.org/b.m3u")
     private val initial = SourceLibrary(listOf(first, second), first.id)
+
+    @Test
+    fun refreshReusesChannelsDuringLoadingAndFallbackButPublishesChangedData(): Unit = runBlocking(block = {
+        val entered = CompletableDeferred<Unit>()
+        val complete = CompletableDeferred<String>()
+        var response: suspend () -> String = { playlist("First") }
+        val stores = mutableMapOf<String, MemoryPlaylist>()
+        val repository = repository(MemoryLibrary(initial), stores, { _ -> response() })
+        repository.refresh()
+        val channels = repository.state.value.channels
+        val fallback = stores.getValue(first.url).read()!!
+        stores.getValue(first.url).write(fallback.copy(channels = fallback.channels.map(transform = { channel -> channel.copy() })))
+        response = {
+            entered.complete(Unit)
+            complete.await()
+        }
+        val refresh = async(block = { repository.refresh() })
+        entered.await()
+        assertTrue(repository.state.value.refreshing)
+        assertSame(channels, repository.state.value.channels)
+        complete.completeExceptionally(IOException("Unavailable"))
+        assertTrue(refresh.await().failed)
+        assertFalse(repository.state.value.refreshing)
+        assertTrue(repository.state.value.refreshFailed)
+        assertSame(channels, repository.state.value.channels)
+
+        response = { playlist("Changed") }
+        assertFalse(repository.refresh().failed)
+        assertFalse(repository.state.value.refreshFailed)
+        assertEquals("Changed", repository.state.value.channels.single().name)
+    })
 
     @Test
     fun explicitGuideUpdatesCachedChannelsAndSurvivesDeletionInFavorites(): Unit = runBlocking(block = {

@@ -19,7 +19,6 @@ class RefreshEngine(private val store: PlaylistStore, private val download: susp
         readResponseTime: Boolean = false,
         fallbackGuideAddress: String? = null
     ): RefreshResult {
-        val cached = store.read()
         try {
             val channels = PlaylistParser().parse(download(sourceUrl), sourceUrl, readResponseTime, fallbackGuideAddress)
             if (channels.isEmpty()) {
@@ -32,7 +31,8 @@ class RefreshEngine(private val store: PlaylistStore, private val download: susp
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
-            return RefreshResult(cached, failed = true)
+            currentCoroutineContext().ensureActive()
+            return RefreshResult(store.read(), failed = true)
         }
     }
 
@@ -40,8 +40,8 @@ class RefreshEngine(private val store: PlaylistStore, private val download: susp
         const val SOURCE_URL = LibraryRules.DEFAULT_URL
         const val DAY_MILLIS = 24 * 60 * 60 * 1000L
 
-        fun isStale(snapshot: PlaylistSnapshot, now: Long): Boolean {
-            return now < snapshot.updatedAt || now - snapshot.updatedAt >= DAY_MILLIS
+        fun isStale(updatedAt: Long, now: Long): Boolean {
+            return now < updatedAt || now - updatedAt >= DAY_MILLIS
         }
     }
 }

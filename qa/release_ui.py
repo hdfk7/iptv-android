@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import io
 import json
 import re
 import subprocess
@@ -62,6 +63,9 @@ class Device:
             self.click("更多")
 
     def menu(self, label):
+        if self.device_type == "tv":
+            self.choose_with_remote(label)
+            return
         root = self.tree()
         node = find(root, label)
         if node is None and self.device_type == "phone":
@@ -72,6 +76,15 @@ class Device:
         if node is None:
             raise AssertionError(f"Menu entry not visible: {label}")
         self.tap(node)
+
+    def choose_with_remote(self, label, direction="KEYCODE_DPAD_DOWN", limit=12):
+        for attempt in range(limit):
+            if label in tv_highlight(self):
+                self.key("KEYCODE_DPAD_CENTER")
+                return
+            if attempt + 1 < limit:
+                self.key(direction)
+        raise AssertionError(f"Control not reachable by remote: {label}")
 
     def screenshot(self, mode, name):
         OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -84,6 +97,29 @@ def find(root, label, attr="text"):
 
 def bounds(node):
     return tuple(map(int, re.findall(r"\d+", node.get("bounds"))))
+
+
+def tv_highlight(device, root=None, screenshot=None):
+    from PIL import Image
+
+    root = device.tree() if root is None else root
+    screenshot = device.adb("exec-out", "screencap", "-p") if screenshot is None else screenshot
+    highlighted = []
+    focus_colors = {(57, 86, 115), (76, 102, 128)}
+    with Image.open(io.BytesIO(screenshot)) as source:
+        image = source.convert("RGB")
+        for node in root.iter("node"):
+            label = node.get("text") or node.get("content-desc")
+            if not label or "://" in label:
+                continue
+            left, top, right, bottom = bounds(node)
+            if right - left < 4 or bottom - top < 4:
+                continue
+            crop = image.crop((left, top, right, bottom))
+            colors = crop.getcolors(crop.width * crop.height)
+            if sum(count for count, color in colors if color in focus_colors) > crop.width * crop.height * 0.20:
+                highlighted.append(label)
+    return highlighted
 
 
 def check_form(root, fields):
@@ -107,20 +143,24 @@ def verify_forms(device, mode):
     device.start()
     device.more()
     device.menu("源管理")
-    device.click("添加源", "content-desc")
+    if device.device_type == "tv":
+        device.choose_with_remote("添加源")
+    else:
+        device.click("添加源", "content-desc")
     check_form(device.tree(), ("源名称", "播放列表地址", "XMLTV 地址（选填）"))
     device.screenshot(mode, "add-source")
-    device.click("取消", "content-desc")
+    if device.device_type == "tv":
+        device.key("KEYCODE_BACK")
+        assert "添加源" in tv_highlight(device), "TV add form did not restore the Add focus"
+    else:
+        device.click("取消", "content-desc")
     device.key("KEYCODE_BACK")
 
     device.start()
     device.more()
     device.menu("设置")
     if device.device_type == "tv":
-        root = device.tree()
-        if not any(node.get("focused") == "true" and find(node, "HTTP 代理") is not None
-                   for node in root.iter("node")):
-            raise AssertionError("TV settings did not focus HTTP 代理")
+        assert "HTTP 代理" in tv_highlight(device), "TV settings did not focus HTTP 代理"
         device.key("KEYCODE_DPAD_CENTER")
     else:
         device.click("HTTP 代理")
@@ -128,25 +168,44 @@ def verify_forms(device, mode):
     device.screenshot(mode, "proxy")
     device.key("KEYCODE_BACK")
     if device.device_type == "tv":
-        root = device.tree()
-        if not any(node.get("focused") == "true" and find(node, "HTTP 代理") is not None
-                   for node in root.iter("node")):
-            raise AssertionError("TV proxy did not restore the settings focus")
+        assert "HTTP 代理" in tv_highlight(device), "TV proxy did not restore the settings focus"
     device.key("KEYCODE_BACK")
 
 
-def verify_release(serial, device_type):
-    device = Device(serial, device_type)
+def release_artifact():
     entry = json.loads((APK_DIR / "output-metadata.json").read_text(encoding="utf-8"))["elements"][0]
-    apk = APK_DIR / entry["outputFile"]
-    if "Success" not in device.adb("install", "-r", str(apk)).decode("utf-8"):
-        raise AssertionError("Release APK did not install")
+    return entry, APK_DIR / entry["outputFile"]
+
+
+def verify_installed(device, apk, entry):
     installed = device.shell("pm", "path", PACKAGE).splitlines()[0].removeprefix("package:")
     local_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
     if device.shell("sha256sum", installed).split()[0] != local_hash:
         raise AssertionError("Installed APK does not match the Release build")
-    print(f"{serial} {entry['versionName']} ({entry['versionCode']}) {local_hash}", flush=True)
+    package = device.shell("dumpsys", "package", PACKAGE)
+    if not re.search(rf"\bversionName={re.escape(entry['versionName'])}\s", package):
+        raise AssertionError("Installed versionName does not match the Release build")
+    if not re.search(rf"\bversionCode={entry['versionCode']}\s", package):
+        raise AssertionError("Installed versionCode does not match the Release build")
+    print(f"{device.serial} {entry['versionName']} ({entry['versionCode']}) {local_hash}", flush=True)
+    return entry, local_hash
 
+
+def install_release(device):
+    entry, apk = release_artifact()
+    if "Success" not in device.adb("install", "-r", str(apk)).decode("utf-8"):
+        raise AssertionError("Release APK did not install")
+    return verify_installed(device, apk, entry)
+
+
+def verify_release(serial, device_type):
+    device = Device(serial, device_type)
+    entry, checksum = install_release(device)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    result = {"serial": serial, "model": device.shell("getprop", "ro.product.model").strip(),
+              "android": device.shell("getprop", "ro.build.version.release").strip(),
+              "versionName": entry["versionName"], "versionCode": entry["versionCode"],
+              "sha256": checksum, "passed": False}
     rotation = device.shell("wm", "user-rotation").split() if device_type == "phone" else None
     try:
         if rotation is None:
@@ -155,10 +214,13 @@ def verify_release(serial, device_type):
             for mode, value in (("portrait", "0"), ("landscape", "1")):
                 device.shell("wm", "user-rotation", "lock", value)
                 verify_forms(device, mode)
+        result["passed"] = True
     finally:
         if rotation is not None:
             device.shell("wm", "user-rotation", *rotation)
         device.shell("rm", "-f", REMOTE_XML)
+        (OUTPUT / f"{device_type}-result.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"{device_type}: forms and controls verified", flush=True)
 
 

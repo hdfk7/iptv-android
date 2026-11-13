@@ -128,6 +128,9 @@ object LibraryRules {
     }
 
     fun syncFavorites(library: SourceLibrary, source: PlaylistSource, channels: List<Channel>): SourceLibrary {
+        if (library.favorites.none(predicate = { favorite -> favorite.sourceId == source.id })) {
+            return library
+        }
         val byKey = channels.associateBy(keySelector = { channel -> channel.key })
         val favorites = library.favorites.map(transform = { favorite ->
             if (favorite.sourceId == source.id) {

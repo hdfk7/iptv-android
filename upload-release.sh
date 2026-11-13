@@ -55,17 +55,12 @@ echo "==> 目标: $SERVER:$REMOTE_DIR"
 echo "==> 创建上传目录"
 ssh -o BatchMode=yes "$SERVER" "mkdir -p -- '$REMOTE_DIR'"
 
-STAGED_APK=".$APK_NAME.upload"
-STAGED_MANIFEST=".latest-$APK_NAME.upload"
+STAGE="$(ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && mktemp -d .release-upload.XXXXXXXX")"
+STAGED_APK="$STAGE/$APK_NAME"
+STAGED_MANIFEST="$STAGE/latest.json"
 scp -o BatchMode=yes "$APK" "$SERVER:$REMOTE_DIR/$STAGED_APK"
 scp -o BatchMode=yes "$MANIFEST" "$SERVER:$REMOTE_DIR/$STAGED_MANIFEST"
-ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && test -s '$STAGED_APK' && test -s '$STAGED_MANIFEST' && mv -f -- '$STAGED_APK' '$APK_NAME' && mv -f -- '$STAGED_MANIFEST' latest.json"
-
-echo "==> 清理其它版本 APK"
-ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && find . -maxdepth 1 -type f -name 'IPTV-release-*.apk' -not -name '$APK_NAME' -delete"
-
-echo "==> 服务器上的文件"
-ssh -o BatchMode=yes "$SERVER" "ls -lh '$REMOTE_DIR/$APK_NAME' '$REMOTE_DIR/latest.json'"
+ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && (timeout 60 flock 9 && test -s '$STAGED_APK' && test -s '$STAGED_MANIFEST' && mv -f -- '$STAGED_APK' '$APK_NAME' && mv -f -- '$STAGED_MANIFEST' latest.json && rmdir -- '$STAGE' && find . -maxdepth 1 -type f -name 'IPTV-release-*.apk' -not -name '$APK_NAME' -delete && ls -lh -- '$APK_NAME' latest.json) 9>.release.lock"
 
 echo "==> 完成"
 echo "    $PUBLIC_BASE/$APK_NAME"

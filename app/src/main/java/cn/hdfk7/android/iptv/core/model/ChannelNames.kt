@@ -6,6 +6,7 @@ import java.util.Locale
 /** Conservative name identity: CCTV's common formatting variants share one program. */
 object ChannelNames {
     private val whitespace = Regex("\\s+")
+    private val canonicalCctv = Regex("^CCTV[0-9]{1,2}[+]?$")
     private val resolution = Regex("[\\(\\[【](?:[0-9]{3,4}[IP]|HD|FHD|UHD|高清|超清|标清)[\\)\\]】]")
     private val cctv = Regex("^CCTV[-_]?([0-9]{1,2})([+]?)(?:(?:综合|财经|综艺|中文国际|体育赛事|体育|电影|国防军事|军事农业|电视剧|纪录|科教|戏曲|社会与法|新闻|少儿|音乐|农业农村|奥林匹克|高清|超清|标清|HD|FHD|UHD|[0-9]{3,4}[IP]))*$")
 
@@ -19,9 +20,8 @@ object ChannelNames {
         return compact
     }
 
-    fun display(name: String): String {
-        val key = key(name)
-        if (Regex("^CCTV[0-9]{1,2}[+]?$").matches(key)) {
+    fun display(name: String, key: String): String {
+        if (canonicalCctv.matches(key)) {
             return key
         }
         return name.trim()
@@ -33,7 +33,7 @@ object ChannelAggregation {
         return channels.groupBy(keySelector = { channel -> channel.key }).values.map(transform = { entries ->
             val first = entries.first()
             first.copy(
-                name = ChannelNames.display(first.name),
+                name = ChannelNames.display(first.name, first.key),
                 group = entries.firstOrNull(predicate = { channel -> channel.group.isNotBlank() })?.group.orEmpty(),
                 guideRefs = entries.flatMap(transform = { channel -> channel.guideRefs }).distinct(),
                 streams = entries.flatMap(transform = { channel -> channel.streams }).distinct(),

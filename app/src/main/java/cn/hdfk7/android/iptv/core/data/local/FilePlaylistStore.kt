@@ -20,19 +20,7 @@ class FilePlaylistStore(directory: File, name: String) : PlaylistStore {
             val json = JSONObject(file.openRead().bufferedReader().use(block = { reader -> reader.readText() }))
             val array = json.getJSONArray("channels")
             val channels = (0 until array.length()).map(transform = { index ->
-                val entry = array.getJSONObject(index)
-                val channel = ChannelJson.decode(entry)
-                val streams = channel.streams
-                val hints = entry.optJSONObject("responseTimesMs")
-                val timings = if (hints == null) {
-                    emptyMap()
-                } else {
-                    streams.mapNotNull(transform = { url ->
-                        val time = hints.optInt(url)
-                        if (time in 1..60_000) url to time else null
-                    }).toMap()
-                }
-                channel.copy(responseTimesMs = timings)
+                ChannelJson.decode(array.getJSONObject(index), readResponseTimes = true)
             })
             PlaylistSnapshot(channels, json.getLong("updatedAt"))
         }).getOrNull()
