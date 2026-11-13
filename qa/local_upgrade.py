@@ -7,9 +7,10 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-from release_ui import Device, bounds, find, install_release, release_artifact, verify_installed
+from release_ui import Device, PACKAGE, bounds, find, install_release, release_artifact, verify_installed
 from upgrade_seed import seed
 
 
@@ -65,6 +66,76 @@ def snapshot(device, stage):
     return {"visibleSubscriptionHashes": source_hashes, "favoriteCount": int(counts[0]), "visibleRecent": recent}
 
 
+def wait_for_ui(device, labels, timeout=90):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        root = device.tree()
+        for label in labels:
+            node = find(root, label) or find(root, label, "content-desc")
+            if node is not None:
+                return label, node
+    raise AssertionError(f"Expected UI did not appear: {labels}")
+
+
+def update_action(device, label, node):
+    if device.device_type == "tv":
+        device.choose_with_remote(label, "KEYCODE_DPAD_RIGHT", limit=6)
+    else:
+        device.tap(node)
+
+
+def install_in_app(device, expected):
+    device.start()
+    device.more()
+    device.menu("设置")
+    if device.device_type == "tv":
+        device.key("KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_CENTER")
+    else:
+        device.click("检查应用更新")
+    label, node = wait_for_ui(device, ("确认下载",))
+    update_action(device, label, node)
+    label, node = wait_for_ui(device, ("去授权", "安装更新"))
+    if label == "去授权":
+        update_action(device, label, node)
+        if device.device_type == "tv":
+            wait_for_ui(device, ("IPTV",))
+            for _ in range(10):
+                root = device.tree()
+                focused = [item for item in root.iter("node") if item.get("focused") == "true"]
+                if any(find(item, "IPTV") is not None for item in focused):
+                    device.key("KEYCODE_DPAD_CENTER")
+                    break
+                device.key("KEYCODE_DPAD_DOWN")
+            else:
+                raise AssertionError("Unknown-app permission did not focus IPTV")
+        else:
+            _, switch = wait_for_ui(device, ("允许来自此来源的应用", "允许来自此来源的安装", "Allow from this source"))
+            device.tap(switch)
+        device.key("KEYCODE_BACK")
+        label, node = wait_for_ui(device, ("安装更新",))
+    update_action(device, label, node)
+    label, node = wait_for_ui(device, ("INSTALL", "Install", "安装", "继续安装"))
+    if device.device_type == "tv":
+        for _ in range(6):
+            root = device.tree()
+            button = find(root, label)
+            if button is not None and button.get("focused") == "true":
+                device.key("KEYCODE_DPAD_CENTER")
+                break
+            device.key("KEYCODE_DPAD_RIGHT")
+        else:
+            raise AssertionError("System Install button could not be reached")
+    else:
+        device.tap(node)
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        installed = device.shell("dumpsys", "package", PACKAGE)
+        if re.search(rf"\bversionCode={expected['versionCode']}\s", installed):
+            return
+        time.sleep(0.5)
+    raise AssertionError("System installer did not install the requested version")
+
+
 def main():
     sys.stdout.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
@@ -76,6 +147,7 @@ def main():
                         help="Allow ADB to install the older APK over a newer version on this test device")
     parser.add_argument("--seed-url", help="Add a temporary test subscription on the old version before the upgrade")
     parser.add_argument("--seed-guide", help="XMLTV address for the temporary test subscription")
+    parser.add_argument("--in-app", action="store_true", help="Download and install from the old app's update screen")
     args = parser.parse_args()
     if bool(args.seed_url) != bool(args.seed_guide):
         parser.error("--seed-url and --seed-guide must be supplied together")
@@ -86,20 +158,27 @@ def main():
         parser.error("Old APK must have the same package and signing certificate and a lower versionCode")
     device = Device(args.serial, args.device)
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    result = {"serial": args.serial, "model": device.shell("getprop", "ro.product.model").strip(),
+    result = {"method": "in-app" if args.in_app else "local", "serial": args.serial, "model": device.shell("getprop", "ro.product.model").strip(),
               "android": device.shell("getprop", "ro.build.version.release").strip(), "from": old_entry, "to": new_entry}
     flags = ["-r", "-d"] if args.allow_downgrade else ["-r"]
     if b"Success" not in device.adb("install", *flags, str(args.old_apk.resolve())):
         raise AssertionError("Old APK did not install")
-    try:
+    def baseline():
         _, result["oldSha256"] = verify_installed(device, args.old_apk, old_entry)
         if args.seed_url:
             result["temporaryFavoriteAdded"] = seed(device, args.seed_url, args.seed_guide, "IPTV-QA-Upgrade")
         result["before"] = snapshot(device, "before")
         if args.seed_url:
             assert result["before"]["favoriteCount"] > 0, "Temporary data must include a nonempty favorites list"
-    finally:
-        _, result["sha256"] = install_release(device)
+    if args.in_app:
+        baseline()
+        install_in_app(device, new_entry)
+        _, result["sha256"] = verify_installed(device, current_apk, new_entry)
+    else:
+        try:
+            baseline()
+        finally:
+            _, result["sha256"] = install_release(device)
     result["after"] = snapshot(device, "after")
     result["passed"] = result["before"] == result["after"]
     result["nonEmptyFavoritesCovered"] = result["before"]["favoriteCount"] > 0

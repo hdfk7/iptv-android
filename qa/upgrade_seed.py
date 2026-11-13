@@ -13,11 +13,11 @@ def seed(device, url, guide, name):
     if tv:
         device.choose_with_remote("添加源")
         for value, direction in ((name, "KEYCODE_DPAD_DOWN"), (url, "KEYCODE_DPAD_RIGHT"),
-                                 (guide, "KEYCODE_DPAD_RIGHT")):
+                                 (guide, "KEYCODE_DPAD_DOWN")):
             device.key(direction, "KEYCODE_DPAD_CENTER")
             device.input("text", value)
             device.key("KEYCODE_BACK")
-        device.choose_with_remote("保存")
+        device.key("KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_CENTER")
     else:
         device.click("添加源", "content-desc")
         for label, value in (("源名称", name), ("播放列表地址", url), ("XMLTV 地址（选填）", guide)):

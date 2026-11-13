@@ -39,6 +39,8 @@ python qa/local_upgrade.py --device tv --serial <TV序列号> --old-apk <旧版A
 
 应用内升级使用配置了测试 HTTPS 清单的同签名旧包。清单指向同签名、更高 `versionCode` 的候选包。从设置进入检查更新，确认下载，按需授权并在系统安装器确认，安装后核对包哈希和原数据。公开渠道验证使用实际分发的旧包和清单。
 
+给 `local_upgrade.py` 加 `--in-app` 走应用内升级。脚本通过触摸、输入框打字和遥控按键创建测试数据并驱动升级界面。ADB 安装仅用于准备旧版基线；新版通过 App 发起下载和系统安装。版本、哈希和系统窗口状态可只读核对。
+
 ## 受控播放与节目单
 
 用自行生成的测试 MP4 启动 `qa/fixture_server.py`。服务仅监听电脑的 `127.0.0.1`；用 `adb -s <序列号> reverse tcp:18764 tcp:18764` 转发。使用独立测试源 `http://127.0.0.1:18764/release.m3u` 和 `http://127.0.0.1:18764/release-guide.xml`。将服务切换到 `/control?mode=release-offline` 模拟 503，结束后恢复 `/control?mode=ok`，移除测试源和转发。
