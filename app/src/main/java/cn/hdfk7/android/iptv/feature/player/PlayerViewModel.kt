@@ -89,6 +89,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     var fillVideoScreen: Boolean by mutableStateOf(viewing.getBoolean("fill_video_screen", false))
         private set
 
+    var tvRenderingCompatibility: Boolean by mutableStateOf(viewing.getBoolean("tv_rendering_compatibility", false))
+        private set
+
+    fun toggleTvRenderingCompatibility(): Unit {
+        tvRenderingCompatibility = !tvRenderingCompatibility
+        viewing.edit().putBoolean("tv_rendering_compatibility", tvRenderingCompatibility).apply()
+    }
+
     fun toggleFillVideoScreen(): Unit {
         fillVideoScreen = !fillVideoScreen
         viewing.edit().putBoolean("fill_video_screen", fillVideoScreen).apply()

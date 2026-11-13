@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import android.os.Build
@@ -25,6 +26,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import cn.hdfk7.android.iptv.core.ui.components.ExitHint
+import cn.hdfk7.android.iptv.core.ui.components.LocalTvRenderingCompatibility
 import cn.hdfk7.android.iptv.core.ui.theme.IptvTheme
 import cn.hdfk7.android.iptv.feature.source.SourceManagerViewModel
 import cn.hdfk7.android.iptv.feature.player.PlayerScreen
@@ -87,8 +89,13 @@ class MainActivity : ComponentActivity() {
                     }
                 })
                 Box(modifier = Modifier.fillMaxSize(), content = {
-                    PlayerScreen(viewModel = viewModel, sourceViewModel = sourceViewModel, television = television,
-                        onDialogStateChanged = { open -> playerDialogOpen = open })
+                    CompositionLocalProvider(
+                        LocalTvRenderingCompatibility provides (television && viewModel.tvRenderingCompatibility),
+                        content = {
+                            PlayerScreen(viewModel = viewModel, sourceViewModel = sourceViewModel, television = television,
+                                onDialogStateChanged = { open -> playerDialogOpen = open })
+                        }
+                    )
                     ExitHint(visible = exitHintTime != 0L)
                 })
             })

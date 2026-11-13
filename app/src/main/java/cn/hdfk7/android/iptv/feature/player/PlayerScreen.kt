@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.app.IptvApplication
 import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
+import cn.hdfk7.android.iptv.core.ui.components.LocalTvRenderingCompatibility
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.TvUiSurface
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
@@ -76,7 +77,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
         modifier = Modifier.fillMaxSize().background(Color.Black),
         content = {
             PlaybackVideo(viewModel = viewModel)
-            TvUiSurface(modifier = Modifier.fillMaxSize(), content = {
+            TvUiSurface(television = television, modifier = Modifier.fillMaxSize(), content = {
                 CinemaPlayerScreen(
                     state = state,
                     viewModel = viewModel,
@@ -113,6 +114,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
                         onToggleResume = viewModel::toggleResume,
                         fillVideoScreen = viewModel.fillVideoScreen,
                         onToggleFillVideoScreen = viewModel::toggleFillVideoScreen,
+                        onToggleRenderingCompatibility = viewModel::toggleTvRenderingCompatibility,
                         onProxy = {
                             settingsMenuEntry = SettingsPage.Proxy
                             showSettings(SettingsPage.Proxy)
@@ -139,7 +141,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
 
 private enum class SettingsPage { Menu, Proxy, Update }
 
-private enum class SettingsControl { Close, Proxy, Update, Startup, FillVideo }
+private enum class SettingsControl { Close, Proxy, Update, Startup, FillVideo, RenderingCompatibility }
 
 @Composable
 private fun HomeSettingsDialog(
@@ -150,6 +152,7 @@ private fun HomeSettingsDialog(
     onToggleResume: () -> Unit,
     fillVideoScreen: Boolean,
     onToggleFillVideoScreen: () -> Unit,
+    onToggleRenderingCompatibility: () -> Unit,
     television: Boolean,
     entry: SettingsPage
 ): Unit {
@@ -166,6 +169,7 @@ private fun HomeSettingsDialog(
                 SettingsControl.Update -> onUpdate()
                 SettingsControl.Startup -> onToggleResume()
                 SettingsControl.FillVideo -> onToggleFillVideoScreen()
+                SettingsControl.RenderingCompatibility -> onToggleRenderingCompatibility()
             }
         })
         fun highlighted(control: SettingsControl): Boolean? {
@@ -224,6 +228,15 @@ private fun HomeSettingsDialog(
                                 onClick = onToggleFillVideoScreen,
                                 highlighted = highlighted(SettingsControl.FillVideo)
                             )
+                            if (television) {
+                                SettingsEntry(
+                                    icon = R.drawable.ic_settings,
+                                    title = stringResource(R.string.tv_rendering_compatibility),
+                                    checked = LocalTvRenderingCompatibility.current,
+                                    onClick = onToggleRenderingCompatibility,
+                                    highlighted = highlighted(SettingsControl.RenderingCompatibility)
+                                )
+                            }
                         })
                     }
                 )
