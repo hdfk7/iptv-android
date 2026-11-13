@@ -1,6 +1,8 @@
 """Prepare controlled subscription, favorites and history through the old App UI."""
 
 import io
+import os
+from pathlib import Path
 import time
 
 from PIL import Image
@@ -8,7 +10,7 @@ from PIL import Image
 from release_ui import PACKAGE, bounds, find, focus_color_present, tv_highlight
 
 
-SEED_NAME = "IPTV-QA-Upgrade"
+SEED_NAME = "IPTV-QA-Upgrade-" + Path(os.environ.get("IPTV_QA_OUTPUT", "local")).name.rsplit("-", 1)[-1][:8]
 SEED_CHANNEL = "QA Release"
 HISTORY_CHANNEL = "QA History"
 
@@ -48,7 +50,10 @@ def close_panels(device):
 def source_manager(device):
     close_panels(device)
     device.more()
-    device.menu("源管理")
+    if device.device_type == "tv":
+        device.choose_with_remote("源管理", "KEYCODE_DPAD_UP")
+    else:
+        device.menu("源管理")
     assert control(device.tree(), "添加源") is not None, "Source manager did not open"
 
 

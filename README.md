@@ -22,7 +22,7 @@ $release = (Get-Content "$releaseDir/output-metadata.json" -Raw | ConvertFrom-Js
 adb -s <设备序列号> shell dumpsys package cn.hdfk7.android.iptv | Select-String 'versionCode=|versionName='
 ```
 
-通过设备安装界面准备旧版正式包，从桌面打开 IPTV。手机和 TV 的旧版数据准备、应用内升级及清理见 [全量回归](qa/README.md)。
+手机和 TV 的 ADB 卸载、发布脚本打旧包、ADB 安装、旧版数据准备、发布脚本打新版、应用内升级和收尾见 [全量回归](qa/README.md)。
 Debug 包名 `cn.hdfk7.android.iptv.debug`、启动器名称 IPTV；Release 包名 `cn.hdfk7.android.iptv`、名称 IPTV。电视需开启开发者选项并完成 ADB 授权。macOS/Linux 使用 `./gradlew`。
 
 ## 签名、打包与 Git

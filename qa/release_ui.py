@@ -229,6 +229,8 @@ def verify_installed(device, apk, entry):
 
 def verify_release_apk(device):
     entry, apk = release_artifact()
+    if os.environ.get("IPTV_QA_APK"):
+        apk = Path(os.environ["IPTV_QA_APK"])
     if (QA_OUTPUT / ".iptv-qa-run").is_file():
         checkpoint = QA_OUTPUT / "local-upgrade" / "paired-run.json"
         assert checkpoint.is_file(), "Complete the paired upgrade before running Release regression"

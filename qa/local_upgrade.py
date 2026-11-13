@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from release_ui import Device, PACKAGE, QA_OUTPUT, bounds, find, release_artifact, verify_installed
+from release_ui import Device, PACKAGE, QA_OUTPUT, bounds, find, verify_installed
 from upgrade_seed import (
     HISTORY_CHANNEL, SEED_CHANNEL, SEED_NAME, close_panels, control, open_app, open_channels, seed,
     source_action, source_manager,
@@ -188,7 +188,7 @@ def main():
     parser.add_argument("--phone", required=True, help="ADB serial of the physical phone")
     parser.add_argument("--tv", required=True, help="ADB serial of the TV or TV emulator")
     parser.add_argument("--old-apk", type=Path, required=True)
-    parser.add_argument("--new-apk", type=Path, help="Exact distributed APK; defaults to the local Release artifact")
+    parser.add_argument("--new-apk", type=Path, help="Exact distributed APK, required for upgrade")
     parser.add_argument("--build-tools", type=Path, required=True)
     parser.add_argument("--phase", choices=("baseline", "upgrade"), required=True)
     parser.add_argument("--fixture-port", type=int, default=18764)
@@ -196,26 +196,23 @@ def main():
     if args.phone == args.tv:
         parser.error("Select two different devices")
     old_apk = args.old_apk.resolve()
-    new_apk = args.new_apk.resolve() if args.new_apk else release_artifact()[1].resolve()
     package, old_entry, old_signers = apk_identity(old_apk, args.build_tools)
-    new_package, new_entry, new_signers = apk_identity(new_apk, args.build_tools)
-    if package != PACKAGE or new_package != PACKAGE or old_signers != new_signers:
-        parser.error("Both APKs must use the IPTV package and the same formal signing certificate")
-    if any(path.is_relative_to(QA_OUTPUT.resolve()) for path in (old_apk, new_apk)):
+    if package != PACKAGE:
+        parser.error("The old APK must use the IPTV package")
+    if old_apk.is_relative_to(QA_OUTPUT.resolve()):
         parser.error("Keep APKs outside the temporary QA output directory")
-    if old_entry["versionCode"] >= new_entry["versionCode"]:
-        parser.error("The candidate must have a greater versionCode")
     devices = [Device(args.phone, "phone"), Device(args.tv, "tv")]
     old_hash = hashlib.sha256(old_apk.read_bytes()).hexdigest()
-    new_hash = hashlib.sha256(new_apk.read_bytes()).hexdigest()
-    identity = {"phone": args.phone, "tv": args.tv, "from": old_entry, "to": new_entry,
-                "oldSha256": old_hash, "candidateSha256": new_hash, "fixturePort": args.fixture_port}
+    identity = {"phone": args.phone, "tv": args.tv, "from": old_entry,
+                "oldSha256": old_hash, "fixturePort": args.fixture_port}
     url = f"http://127.0.0.1:{args.fixture_port}/release.m3u"
     guide = f"http://127.0.0.1:{args.fixture_port}/release-guide.xml"
     OUTPUT.mkdir(parents=True, exist_ok=True)
     checkpoint = OUTPUT / "paired-run.json"
 
     if args.phase == "baseline":
+        if args.new_apk is not None:
+            parser.error("Build the candidate after collecting both baselines")
         if not (QA_OUTPUT / ".iptv-qa-run").is_file():
             parser.error("Prepare a marked temporary QA run directory as described in qa/README.md")
         if checkpoint.exists():
@@ -237,14 +234,31 @@ def main():
     if not checkpoint.is_file():
         parser.error("Collect both old-version baselines in this run before upgrading")
     state = json.loads(checkpoint.read_text(encoding="utf-8"))
-    if state["identity"] != identity or set(state["devices"]) != {"phone", "tv"}:
-        parser.error("Device pair, APKs or fixture do not match the recorded baseline")
+    if any(state["identity"].get(key) != value for key, value in identity.items()) or set(state["devices"]) != {"phone", "tv"}:
+        parser.error("Device pair, old APK or fixture does not match the recorded baseline")
     for kind, record in state["devices"].items():
         before = record.get("before", {})
         if (not before.get("visibleSubscriptionHashes") or not before.get("favoriteCount")
                 or SEED_CHANNEL not in before.get("visibleFavorites", [])
                 or HISTORY_CHANNEL not in before.get("visibleRecent", [])):
             parser.error(f"Incomplete old-version baseline: {kind}")
+    if args.new_apk is None:
+        parser.error("--new-apk is required for upgrade")
+    new_apk = args.new_apk.resolve()
+    if new_apk.is_relative_to(QA_OUTPUT.resolve()):
+        parser.error("Keep APKs outside the temporary QA output directory")
+    new_package, new_entry, new_signers = apk_identity(new_apk, args.build_tools)
+    if new_package != PACKAGE or old_signers != new_signers:
+        parser.error("Both APKs must use the IPTV package and the same formal signing certificate")
+    if old_entry["versionCode"] >= new_entry["versionCode"]:
+        parser.error("The candidate must have a greater versionCode")
+    new_hash = hashlib.sha256(new_apk.read_bytes()).hexdigest()
+    candidate = {"to": new_entry, "candidateSha256": new_hash}
+    if "candidateSha256" in state["identity"] and any(
+        state["identity"].get(key) != value for key, value in candidate.items()
+    ):
+        parser.error("Resume with the candidate APK already recorded for this run")
+    state["identity"].update(candidate)
     # Check both devices before pressing the first installer button. A retry can
     # verify an already-installed candidate when the prior attempt was interrupted.
     pending = []

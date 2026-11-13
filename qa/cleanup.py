@@ -16,7 +16,7 @@ def verify_reset(device, apk, entry):
     open_app(device)
     source_manager(device)
     root = device.tree()
-    assert all(find(root, name) is None for name in ("IPTV-QA-Upgrade", "IPTV-QA-HLS", "IPTV-QA-Proxy"))
+    assert not any(node.get("text", "").startswith("IPTV-QA-") for node in root.iter("node"))
     assert action_row(root, "国内精选", "正在使用") is not None, "Default subscription is not active"
     favorite = find(root, "收藏")
     zero = find(root, "0")
