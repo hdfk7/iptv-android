@@ -28,6 +28,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 
 class AppUpdateFileProvider : FileProvider()
 
@@ -53,7 +54,11 @@ private suspend fun readAppRelease(address: String): AppRelease {
 
 @Suppress("DEPRECATION")
 private fun installerIntent(context: Context, apk: File): Intent {
+    // Some installers persist staged APKs by URI even after the source file changes.
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
+        .buildUpon()
+        .appendQueryParameter("installAttempt", UUID.randomUUID().toString())
+        .build()
     return Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri, "application/vnd.android.package-archive")
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         .putExtra(Intent.EXTRA_RETURN_RESULT, true)
