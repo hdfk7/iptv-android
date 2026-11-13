@@ -1,5 +1,6 @@
 package cn.hdfk7.android.iptv.feature.update
 
+import android.app.Activity
 import cn.hdfk7.android.iptv.R
 
 internal enum class UpdateAction {
@@ -27,5 +28,17 @@ internal fun installationFailureMessage(code: Int): Int {
         -2, -3, in -109..-100 -> R.string.app_update_install_invalid
         -111 -> R.string.app_update_install_blocked
         else -> R.string.app_update_install_rejected
+    }
+}
+
+internal fun AppRelease.matchesInstallation(candidate: AppRelease): Boolean {
+    return !differsFrom(candidate.versionCode.toLong(), candidate.versionName) && sha256 == candidate.sha256
+}
+
+internal fun installationResultMessage(installedMessage: Int?, resultCode: Int, failureCode: Int): Int {
+    return installedMessage ?: when (resultCode) {
+        Activity.RESULT_OK -> R.string.app_update_install_unconfirmed
+        Activity.RESULT_CANCELED -> R.string.app_update_install_cancelled
+        else -> installationFailureMessage(failureCode)
     }
 }

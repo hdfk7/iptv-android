@@ -1,6 +1,5 @@
 package cn.hdfk7.android.iptv.feature.update
 
-import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
@@ -11,6 +10,7 @@ import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.FileProvider
@@ -99,6 +99,8 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     val scope = rememberCoroutineScope()
     var checkAttempt by remember(calculation = { mutableIntStateOf(0) })
     var state by remember(calculation = { mutableStateOf<UpdateDialogState>(UpdateDialogState.Checking) })
+    var installerOutcome by rememberSaveable(init = { mutableStateOf<IntArray?>(null) })
+    var restoredInstallMessage by rememberSaveable(init = { mutableStateOf<Int?>(null) })
     val downloadProgress = remember(calculation = { MutableStateFlow<AppDownloadProgress?>(null) })
     val validation = remember(calculation = { MutableStateFlow(false) })
     val progress by downloadProgress.collectAsState()
@@ -109,21 +111,27 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     val ready = currentState as? UpdateDialogState.Ready
     val downloading = currentState is UpdateDialogState.Downloading
     val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult(), onResult = { outcome ->
-        val request = state as? UpdateDialogState.Installing
-        if (request != null) {
-            scope.launch(block = {
-                val installed = withContext(context = Dispatchers.IO, block = { installedReleaseMessage(context, request.release) })
-                val message = installed ?: when (outcome.resultCode) {
-                    Activity.RESULT_OK -> R.string.app_update_install_unconfirmed
-                    Activity.RESULT_CANCELED -> R.string.app_update_install_cancelled
-                    else -> installationFailureMessage(outcome.data?.getIntExtra("android.intent.extra.INSTALL_RESULT", 0) ?: 0)
-                }
-                if (state === request) {
-                    store.clearInstalling()
-                    state = request.ready.copy(message = message)
-                }
-            })
+        installerOutcome = intArrayOf(outcome.resultCode, outcome.data?.getIntExtra("android.intent.extra.INSTALL_RESULT", 0) ?: 0)
+    })
+    LaunchedEffect(key1 = installerOutcome, key2 = currentState, block = {
+        val outcome = installerOutcome ?: return@LaunchedEffect
+        val request = when (currentState) {
+            is UpdateDialogState.Installing -> currentState.ready
+            is UpdateDialogState.Ready -> currentState
+            UpdateDialogState.Checking -> return@LaunchedEffect
+            else -> null
         }
+        val target = store.installingRelease()
+        if (request != null && target?.matchesInstallation(request.release) == true) {
+            val installed = withContext(context = Dispatchers.IO, block = { installedReleaseMessage(context, target) })
+            if (state === currentState) {
+                val message = installationResultMessage(installed, outcome[0], outcome[1])
+                restoredInstallMessage = message
+                state = request.copy(message = message)
+                store.clearInstalling()
+            }
+        }
+        installerOutcome = null
     })
     val install: (UpdateDialogState.Ready) -> Unit = { candidate ->
         val apk = candidate.apk
@@ -135,12 +143,12 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
                 state = candidate.copy(permission = InstallPermission.Required, message = R.string.app_update_allow_install)
             }
             else -> {
+                restoredInstallMessage = null
                 val allowed = candidate.copy(permission = InstallPermission.Granted)
                 state = UpdateDialogState.Installing(allowed)
                 scope.launch(block = {
                     val message = try {
-                        if (candidate.release.sha256 != null &&
-                            !withContext(context = Dispatchers.IO, block = { store.markInstalling(candidate.release) })) {
+                        if (!withContext(context = Dispatchers.IO, block = { store.markInstalling(candidate.release) })) {
                             R.string.app_update_save_failed
                         } else {
                             installer.launch(installerIntent(context, apk))
@@ -229,7 +237,8 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
             })
             store.clearAuthorizing()
             if (saved != null) {
-                state = readyUpdate(context, saved, store.apk)
+                val ready = readyUpdate(context, saved, store.apk)
+                state = restoredInstallMessage?.let(block = { message -> ready.copy(message = message) }) ?: ready
                 return@LaunchedEffect
             }
         }
@@ -251,6 +260,7 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     val startDownload: () -> Unit = {
         if (update != null && state !is UpdateDialogState.Downloading &&
             state !is UpdateDialogState.Installing && (state as? UpdateDialogState.Ready)?.permission != InstallPermission.Saving) {
+            restoredInstallMessage = null
             state = UpdateDialogState.Downloading(update)
             downloadProgress.value = null
             validation.value = false

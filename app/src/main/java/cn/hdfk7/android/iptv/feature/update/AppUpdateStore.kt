@@ -40,9 +40,12 @@ internal class AppUpdateStore(context: Context) {
     }
 
     fun installingRelease(): AppRelease? {
-        val hash = installation.getString("sha256", null) ?: return null
+        val version = installation.getInt("version", 0)
+        if (version <= 0) {
+            return null
+        }
         val name = installation.getString("name", null) ?: return null
-        return AppRelease(installation.getInt("version", 0), name, "", sha256 = hash)
+        return AppRelease(version, name, "", sha256 = installation.getString("sha256", null))
     }
 
     fun clearInstalling(): Unit {

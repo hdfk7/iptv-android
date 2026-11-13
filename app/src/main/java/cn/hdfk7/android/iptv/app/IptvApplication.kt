@@ -16,7 +16,7 @@ class IptvApplication : Application() {
     override fun onCreate(): Unit {
         super.onCreate()
         val store = AppUpdateStore(this)
-        val release = store.installingRelease() ?: return
+        val release = store.installingRelease()?.takeIf(predicate = { pending -> pending.sha256 != null }) ?: return
         thread(name = "iptv-update-verification", block = {
             val result = installedReleaseMessage(this, release)
             if (result != null) {

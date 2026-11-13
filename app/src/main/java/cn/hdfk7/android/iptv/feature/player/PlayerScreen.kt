@@ -12,6 +12,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
@@ -51,11 +52,17 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
     val sourceUi by sourceViewModel.state.collectAsStateWithLifecycle()
     val app = LocalContext.current.applicationContext as IptvApplication
     val resumeUpdate = remember(app, calculation = { AppUpdateStore(app).shouldResume() })
-    var settingsPage by remember(calculation = { mutableStateOf(if (resumeUpdate) SettingsPage.Update else null) })
+    var updateOpen by rememberSaveable(init = { mutableStateOf(resumeUpdate) })
+    var otherSettingsPage by remember(calculation = { mutableStateOf<SettingsPage?>(null) })
+    val settingsPage = if (updateOpen) SettingsPage.Update else otherSettingsPage
+    fun showSettings(page: SettingsPage?): Unit {
+        updateOpen = page == SettingsPage.Update
+        otherSettingsPage = page.takeUnless(predicate = { target -> target == SettingsPage.Update })
+    }
     var guideChannelId by remember(state.activeSourceId, calculation = { mutableStateOf<String?>(null) })
     val guideChannel = state.channels.firstOrNull(predicate = { channel -> channel.id == guideChannelId })
     var settingsMenuEntry by remember(calculation = {
-        mutableStateOf(if (resumeUpdate) SettingsPage.Update else SettingsPage.Proxy)
+        mutableStateOf(if (updateOpen) SettingsPage.Update else SettingsPage.Proxy)
     })
     val selectedRowFocus = remember(key1 = viewModel, calculation = { ChannelListFocus() })
     val dialogOpen = sourceUi.open || settingsPage != null || guideChannel != null
@@ -63,7 +70,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
         onDialogStateChanged(dialogOpen)
     })
     BackHandler(enabled = settingsPage != null, onBack = {
-        settingsPage = if (settingsPage == SettingsPage.Menu) null else SettingsPage.Menu
+        showSettings(if (settingsPage == SettingsPage.Menu) null else SettingsPage.Menu)
     })
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black),
@@ -76,7 +83,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
                     onSources = sourceViewModel::open,
                     onSettings = {
                         settingsMenuEntry = SettingsPage.Proxy
-                        settingsPage = SettingsPage.Menu
+                        showSettings(SettingsPage.Menu)
                     },
                     onGuide = { id -> guideChannelId = id },
                     selectedRowFocus = selectedRowFocus,
@@ -101,28 +108,28 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
             when (settingsPage) {
                 SettingsPage.Menu -> {
                     HomeSettingsDialog(
-                        onClose = { settingsPage = null },
+                        onClose = { showSettings(null) },
                         resumeEnabled = viewModel.resumeEnabled,
                         onToggleResume = viewModel::toggleResume,
                         fillVideoScreen = viewModel.fillVideoScreen,
                         onToggleFillVideoScreen = viewModel::toggleFillVideoScreen,
                         onProxy = {
                             settingsMenuEntry = SettingsPage.Proxy
-                            settingsPage = SettingsPage.Proxy
+                            showSettings(SettingsPage.Proxy)
                         },
                         onUpdate = {
                             settingsMenuEntry = SettingsPage.Update
-                            settingsPage = SettingsPage.Update
+                            showSettings(SettingsPage.Update)
                         },
                         television = television,
                         entry = settingsMenuEntry
                     )
                 }
                 SettingsPage.Proxy -> {
-                    ProxySettingsDialog(store = app.proxySettings, onClose = { settingsPage = SettingsPage.Menu }, onSaved = viewModel::applyProxy)
+                    ProxySettingsDialog(store = app.proxySettings, onClose = { showSettings(SettingsPage.Menu) }, onSaved = viewModel::applyProxy)
                 }
                 SettingsPage.Update -> {
-                    AppUpdateDialog(onClose = { settingsPage = SettingsPage.Menu })
+                    AppUpdateDialog(onClose = { showSettings(SettingsPage.Menu) })
                 }
                 null -> Unit
             }
