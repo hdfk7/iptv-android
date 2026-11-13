@@ -13,6 +13,9 @@ internal class LineHistory(private val preferences: SharedPreferences) {
 
     private data class Entry(val recordedAt: Long, val quality: LineQuality)
     private val entries = mutableMapOf<String, Entry>()
+    private var keyScope = ""
+    private var keyProgram = ""
+    private val keys = mutableMapOf<String, String>()
 
     init {
         val now = System.currentTimeMillis()
@@ -29,8 +32,15 @@ internal class LineHistory(private val preferences: SharedPreferences) {
     }
 
     fun key(scope: String, program: String, url: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest("$scope\u0000$program\u0000$url".toByteArray())
-        return android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        if (keyScope != scope || keyProgram != program || keys.size >= MAX_ENTRIES && url !in keys) {
+            keys.clear()
+            keyScope = scope
+            keyProgram = program
+        }
+        return keys.getOrPut(key = url, defaultValue = {
+            val bytes = MessageDigest.getInstance("SHA-256").digest("$scope\u0000$program\u0000$url".toByteArray())
+            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        })
     }
 
     fun read(key: String): LineQuality? {

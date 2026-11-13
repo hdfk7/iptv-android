@@ -126,6 +126,20 @@ class PlaybackLineRankingTests {
     }
 
     @Test
+    fun reusedOrderReflectsNewMeasurementsAndRespectsIncomingTieOrder(): Unit {
+        val ranking = PlaybackLineRanking()
+        ranking.record("program", "second", LineQuality(playedMs = 6000))
+        val initial = ranking.lines("program", urls)
+        val orderedUrls = initial.map(transform = { line -> line.url })
+        ranking.record("program", "second", LineQuality(playedMs = 7000))
+        val updated = ranking.lines("program", orderedUrls)
+        assertEquals(orderedUrls, updated.map(transform = { line -> line.url }))
+        assertEquals(7000L, updated.first().quality?.playedMs)
+        assertEquals(listOf("second", "third", "first"),
+            ranking.lines("program", listOf("third", "second", "first")).map(transform = { line -> line.url }))
+    }
+
+    @Test
     fun removedAndDuplicateUrlsDoNotLeaveGapsInSort(): Unit {
         val ranking = PlaybackLineRanking()
         ranking.record("program", "first", LineQuality(playedMs = 10_000))

@@ -53,8 +53,7 @@ internal class ProgrammeGuideIndex(channels: List<Channel>, data: Map<GuideRef, 
     }
 
     private class GuideTimeline(val programmes: List<Programme>) {
-        private val boundaries = programmes.flatMap(transform = { item -> listOf(item.startsAt, item.endsAt) })
-            .distinct().sorted().toLongArray()
+        private val boundaries = programmeBoundaries(programmes)
         private val previewIndex = ProgrammePreviewIndex(programmes)
         private var computedAt = Long.MIN_VALUE
         var schedule = emptyList<Programme>()
@@ -74,4 +73,21 @@ internal class ProgrammeGuideIndex(channels: List<Channel>, data: Map<GuideRef, 
             computedAt = now
         }
     }
+}
+
+internal fun programmeBoundaries(programmes: List<Programme>): LongArray {
+    val boundaries = LongArray(programmes.size * 2)
+    var index = 0
+    for (programme in programmes) {
+        boundaries[index++] = programme.startsAt
+        boundaries[index++] = programme.endsAt
+    }
+    boundaries.sort()
+    var unique = 0
+    for (time in boundaries) {
+        if (unique == 0 || boundaries[unique - 1] != time) {
+            boundaries[unique++] = time
+        }
+    }
+    return if (unique == boundaries.size) boundaries else boundaries.copyOf(unique)
 }

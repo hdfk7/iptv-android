@@ -839,7 +839,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val url = channel.streams.getOrNull(streamIndex)
         val order = lineRanking.order(channel.id, channel.streams, url)
         val lines = order.lines
-        activeChannel = channel.copy(streams = lines.map(transform = { line -> line.url }))
+        if (lines.size != channel.streams.size ||
+            lines.indices.any(predicate = { index -> lines[index].url != channel.streams[index] })) {
+            activeChannel = channel.copy(streams = lines.map(transform = { line -> line.url }))
+        }
         val index = order.playingIndex
         if (index >= 0) {
             streamIndex = index

@@ -5,6 +5,7 @@ import cn.hdfk7.android.iptv.core.model.ProxySettings
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okio.GzipSource
@@ -20,9 +21,19 @@ class PlaylistDownloader(private val settings: () -> ProxySettings = { ProxySett
         return download(address, 24 * 1024 * 1024, guide = true)
     }
 
-    private suspend fun download(address: String, maxBytes: Int, guide: Boolean): String {
-        val client = ProxyHttpClient.create(settings()).newBuilder()
-            .followRedirects(guide).followSslRedirects(guide).callTimeout(45, TimeUnit.SECONDS)
+    private data class Clients(val settings: ProxySettings, val playlist: OkHttpClient, val guide: OkHttpClient)
+
+    private var clients: Clients? = null
+
+    @Synchronized
+    private fun clientFor(guide: Boolean): OkHttpClient {
+        val currentSettings = settings()
+        val existing = clients
+        if (existing != null && existing.settings == currentSettings) {
+            return if (guide) existing.guide else existing.playlist
+        }
+        val playlist = ProxyHttpClient.create(currentSettings).newBuilder()
+            .followRedirects(false).followSslRedirects(false).callTimeout(45, TimeUnit.SECONDS)
             .addNetworkInterceptor(interceptor = { chain ->
                 val request = chain.request()
                 if (request.url.username.isNotEmpty() || request.url.password.isNotEmpty()) {
@@ -30,24 +41,27 @@ class PlaylistDownloader(private val settings: () -> ProxySettings = { ProxySett
                 }
                 chain.proceed(request)
             }).build()
-        try {
-            val call = client.newCall(Request.Builder().url(address).header("User-Agent", "iptv/1.0").build())
-            return suspendCancellableCoroutine(block = { continuation ->
-                continuation.invokeOnCancellation(handler = { call.cancel() })
-                call.enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException): Unit {
-                        continuation.resumeWith(Result.failure(e))
-                    }
+        val programmeGuide = playlist.newBuilder().followRedirects(true).followSslRedirects(true).build()
+        clients = Clients(currentSettings, playlist, programmeGuide)
+        // Running calls retain their own client and can finish or be cancelled normally.
+        existing?.playlist?.connectionPool?.evictAll()
+        return if (guide) programmeGuide else playlist
+    }
 
-                    override fun onResponse(call: Call, response: Response): Unit {
-                        continuation.resumeWith(runCatching(block = { response.use(block = { received -> read(received, maxBytes, gzip = guide) }) }))
-                    }
-                })
+    private suspend fun download(address: String, maxBytes: Int, guide: Boolean): String {
+        val call = clientFor(guide).newCall(Request.Builder().url(address).header("User-Agent", "iptv/1.0").build())
+        return suspendCancellableCoroutine(block = { continuation ->
+            continuation.invokeOnCancellation(handler = { call.cancel() })
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException): Unit {
+                    continuation.resumeWith(Result.failure(e))
+                }
+
+                override fun onResponse(call: Call, response: Response): Unit {
+                    continuation.resumeWith(runCatching(block = { response.use(block = { received -> read(received, maxBytes, gzip = guide) }) }))
+                }
             })
-        } finally {
-            client.connectionPool.evictAll()
-            client.dispatcher.executorService.shutdown()
-        }
+        })
     }
 
     private fun read(response: Response, maxBytes: Int, gzip: Boolean): String {

@@ -8,7 +8,10 @@ import okhttp3.Credentials
 import okhttp3.Request
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
@@ -72,6 +75,69 @@ class ProxyHttpClientTests {
             }
         })
     }
+
+    @Test fun downloadsReuseConnectionAndKeepSeparateRedirectPolicies(): Unit = runBlocking(block = {
+        val ports = LinkedBlockingQueue<Int>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/feed", { exchange ->
+            exchange.use(block = {
+                ports.add(exchange.remoteAddress.port)
+                exchange.sendResponseHeaders(200, 2)
+                exchange.responseBody.write("ok".toByteArray())
+            })
+        })
+        server.createContext("/redirect", { exchange ->
+            exchange.use(block = {
+                exchange.responseHeaders.add("Location", "/feed")
+                exchange.sendResponseHeaders(302, -1)
+            })
+        })
+        server.start()
+        try {
+            val downloader = PlaylistDownloader()
+            val address = "http://127.0.0.1:" + server.address.port
+            assertEquals("ok", downloader.download(address + "/feed"))
+            assertEquals("ok", downloader.downloadGuide(address + "/redirect"))
+            assertEquals(ports.remove(), ports.remove())
+            val failure = runCatching(block = { downloader.download(address + "/redirect") }).exceptionOrNull()
+            assertEquals("Playlist HTTP 302", failure?.message)
+            assertTrue(ports.isEmpty())
+        } finally {
+            server.stop(0)
+        }
+    })
+
+    @Test fun proxySwitchAffectsNextRequest(): Unit = runBlocking(block = {
+        ServerSocket(0).use(block = { first ->
+            ServerSocket(0).use(block = { second ->
+                fun serve(server: ServerSocket, payload: String): CompletableFuture<Unit> {
+                    server.soTimeout = 5000
+                    return CompletableFuture.supplyAsync {
+                        server.accept().use(block = { socket ->
+                            socket.soTimeout = 5000
+                            val reader = socket.getInputStream().bufferedReader()
+                            while (!reader.readLine().isNullOrEmpty()) {
+                                // Wait for the complete proxied request.
+                            }
+                            socket.getOutputStream().write(
+                                ("HTTP/1.1 200 OK\r\nContent-Length: " + payload.length +
+                                    "\r\nConnection: close\r\n\r\n" + payload).toByteArray()
+                            )
+                        })
+                    }
+                }
+                val firstResponse = serve(first, "first")
+                val secondResponse = serve(second, "second")
+                var proxy = ProxySettings(true, "127.0.0.1", first.localPort.toString())
+                val downloader = PlaylistDownloader(settings = { proxy })
+                assertEquals("first", downloader.download("http://unresolvable.invalid/list"))
+                proxy = proxy.copy(port = second.localPort.toString())
+                assertEquals("second", downloader.download("http://unresolvable.invalid/list"))
+                firstResponse.get(5, TimeUnit.SECONDS)
+                secondResponse.get(5, TimeUnit.SECONDS)
+            })
+        })
+    })
 
     @Test fun cancellingPlaylistDownloadClosesActiveRequest(): Unit = runBlocking(block = {
         ServerSocket(0).use(block = { server ->

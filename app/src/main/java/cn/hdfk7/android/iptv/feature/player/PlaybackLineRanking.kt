@@ -7,10 +7,31 @@ internal class PlaybackLineRanking(
     private val readHistory: ((String, String) -> LineQuality?)? = null,
     private val writeHistory: ((String, String, LineQuality) -> Unit)? = null
 ) {
+    private data class SortKey(
+        val tier: Int,
+        val stallBand: Int,
+        val dropBand: Int,
+        val startupBand: Int,
+        val pixels: Long,
+        val frameRate: Float,
+        val startupMs: Long
+    )
+
+    private data class Candidate(val url: String, val key: SortKey)
+
+    private var previousOrder = emptyList<Candidate>()
     private val qualities = mutableMapOf<String, MutableMap<String, LineQuality>>()
+    private val orderByQuality = compareBy<Candidate>({ candidate -> candidate.key.tier })
+        .thenBy({ candidate -> candidate.key.stallBand })
+        .thenBy({ candidate -> candidate.key.dropBand })
+        .thenBy({ candidate -> candidate.key.startupBand })
+        .thenByDescending({ candidate -> candidate.key.pixels })
+        .thenByDescending({ candidate -> candidate.key.frameRate })
+        .thenBy({ candidate -> candidate.key.startupMs })
 
     fun reset(): Unit {
         qualities.clear()
+        previousOrder = emptyList()
     }
 
     fun record(program: String, url: String, quality: LineQuality): Unit {
@@ -32,26 +53,28 @@ internal class PlaybackLineRanking(
 
     fun lines(program: String, urls: List<String>): List<PlaybackLine> {
         val known = qualities[program].orEmpty()
-        return urls.distinct().mapIndexed(transform = { index, url -> PlaybackLine(url, index, readHistory?.invoke(program, url) ?: known[url]) })
-            .sortedWith(compareBy<PlaybackLine>({ line -> tier(line.quality) })
-                .thenBy({ line -> (stallRatio(line.quality) / 0.05).toInt() })
-                .thenBy({ line -> (dropRatio(line.quality) / 0.05).toInt() })
-                .thenBy({ line -> slowStartupTier(line.quality) })
-                .thenByDescending({ line -> (line.quality?.width ?: 0).toLong() * (line.quality?.height ?: 0) })
-                .thenByDescending({ line -> line.quality?.frameRate ?: 0f })
-                .thenBy({ line -> line.quality?.startupMs ?: Long.MAX_VALUE })
-                .thenBy({ line -> line.sort }))
-            .mapIndexed(transform = { index, line -> line.copy(sort = index) })
+        val measurements = urls.distinct().associateWith(valueSelector = { url -> readHistory?.invoke(program, url) ?: known[url] })
+        val candidates = measurements.map(transform = { (url, quality) -> Candidate(url, sortKey(quality)) })
+        val ordered = if (candidates == previousOrder) candidates else candidates.sortedWith(orderByQuality)
+        previousOrder = ordered
+        return ordered.mapIndexed(transform = { index, candidate -> PlaybackLine(candidate.url, index, measurements[candidate.url]) })
     }
 
-    private fun tier(quality: LineQuality?): Int {
-        return when {
+    private fun sortKey(quality: LineQuality?): SortKey {
+        val stalls = stallRatio(quality)
+        val drops = dropRatio(quality)
+        val tier = when {
             quality == null -> 1
             quality.failures > 0 -> 3
             quality.playedMs < 3000L -> 1
-            stallRatio(quality) > 0.1 || dropRatio(quality) > 0.1 -> 2
+            stalls > 0.1 || drops > 0.1 -> 2
             else -> 0
         }
+        return SortKey(
+            tier, (stalls / 0.05).toInt(), (drops / 0.05).toInt(), slowStartupTier(quality),
+            (quality?.width ?: 0).toLong() * (quality?.height ?: 0), quality?.frameRate ?: 0f,
+            quality?.startupMs ?: Long.MAX_VALUE
+        )
     }
 
     private fun slowStartupTier(quality: LineQuality?): Int {

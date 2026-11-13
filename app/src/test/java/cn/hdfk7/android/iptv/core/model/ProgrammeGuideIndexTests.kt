@@ -1,5 +1,6 @@
 package cn.hdfk7.android.iptv.core.model
 
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
@@ -23,6 +24,18 @@ class ProgrammeGuideIndexTests {
         val tomorrow = index.snapshot(midnight)
         assertEquals(listOf(overnight.copy(startsAt = midnight), last), tomorrow.schedules[channel.id])
         assertEquals(ProgrammePreview("First", "Overnight"), index.snapshot(midnight - 100_000).previews[channel.id])
+    }
+
+    @Test
+    fun boundariesMatchSortedDistinctTimestampsForUnorderedAndRepeatedEntries(): Unit {
+        val programmes = listOf(
+            Programme("Third", 30, Long.MAX_VALUE),
+            Programme("Second", 20, 30),
+            Programme("First", Long.MIN_VALUE, 20),
+            Programme("Duplicate", 20, 30)
+        )
+        assertArrayEquals(longArrayOf(Long.MIN_VALUE, 20, 30, Long.MAX_VALUE), programmeBoundaries(programmes))
+        assertArrayEquals(longArrayOf(), programmeBoundaries(emptyList()))
     }
 
     @Test
