@@ -87,6 +87,18 @@ class FixtureHandler(BaseHTTPRequestHandler):
             rows = "".join(f"#EXTINF:-1,QA Failed Lines\n/fail-line-{line}.mp4\n" for line in range(16))
             self.send_body("#EXTM3U\n" + rows, "application/vnd.apple.mpegurl")
             return
+        if path == "/tune-recovery.m3u":
+            run = parse_qs(urlparse(self.path).query).get("run", [""])[0]
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,24}", run):
+                self.send_body("Provide a unique run identifier", status=400)
+                return
+            rows = []
+            for number in range(1, 101):
+                title = f"QA {run} {number:02}"
+                rows.extend((f"#EXTINF:-1,{title}", f"/fail-tune-{run}-{number}.mp4",
+                             f"#EXTINF:-1,{title}", f"/media.mp4?recovery={run}-{number}"))
+            self.send_body("#EXTM3U\n" + "\n".join(rows) + "\n", "application/vnd.apple.mpegurl")
+            return
         if path == "/tune.m3u":
             self.send_body("""#EXTM3U
 #EXTINF:-1,QA Tune Direct

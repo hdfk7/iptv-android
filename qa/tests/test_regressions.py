@@ -18,7 +18,8 @@ import release_ui
 from controlled_ui import guide_address, programme_rows
 from fixture_server import FixtureServer
 from local_upgrade import finish_installation
-from release_tune import parse_tunes, summarize
+from release_tune import parse_tunes, saw_recovery, summarize
+from update_rejection import verify_rejection
 from upgrade_seed import type_in_field
 
 
@@ -32,6 +33,15 @@ class UiRegressionTests(unittest.TestCase):
         device.start()
         device.key.assert_called_once_with("KEYCODE_HOME")
         self.assertEqual([c.args for c in device.launcher_select.call_args_list], [("应用",), ("IPTV",)])
+
+    def test_tv_launcher_accepts_the_installed_apps_tab_already_open(self):
+        device = release_ui.Device("offline-test", "tv")
+        device.key = Mock()
+        device.tree = Mock(return_value=ET.fromstring(
+            '<hierarchy><node text="已安装的应用"/></hierarchy>'))
+        device.launcher_select("应用")
+        device.wait_for_launcher_apps()
+        device.key.assert_not_called()
 
     def test_selected_launcher_entry_is_confirmed_without_moving(self):
         device = release_ui.Device("offline-test", "tv")
@@ -66,6 +76,14 @@ class UiRegressionTests(unittest.TestCase):
             frame.save(encoded, format="PNG")
             self.assertEqual(release_ui.launcher_apps_highlight(encoded.getvalue(), icon), selected)
 
+    def test_tv_highlight_accepts_color_rounding_in_software_mode(self):
+        from PIL import Image
+
+        control = ET.fromstring('<node bounds="[0,0][12,12]"/>')
+        for color, selected in (((76, 102, 128), True), ((76, 102, 129), True), ((19, 22, 29), False)):
+            frame = Image.new("RGB", (12, 12), color)
+            self.assertEqual(release_ui.focus_color_present(frame, control), selected)
+
     def test_phone_more_retries_after_controls_hide(self):
         device = release_ui.Device("offline-test", "phone")
         device.tree = Mock(return_value=ET.fromstring("<hierarchy/>"))
@@ -75,6 +93,33 @@ class UiRegressionTests(unittest.TestCase):
         device.more()
         self.assertEqual(device.player_control.call_count, 2)
         self.assertEqual(device.shell.call_count, 2)
+
+    def test_installer_rejection_requires_an_explicit_rejection_message(self):
+        device = Mock(device_type="phone")
+        device.tree.return_value = ET.fromstring(
+            '<hierarchy><node text="应用未安装" package="com.android.packageinstaller"/></hierarchy>')
+        with patch("update_rejection.wait_for_ui", return_value=("安装", Mock())):
+            self.assertEqual(verify_rejection(device), "应用未安装")
+        device.screenshot.assert_called_once_with("phone", "system-install-rejection")
+
+    def test_installer_rejection_ignores_app_error_before_system_confirmation(self):
+        device = Mock(device_type="phone")
+        device.tree.return_value = ET.fromstring(
+            f'<hierarchy><node text="安装失败" package="{release_ui.PACKAGE}"/></hierarchy>')
+        with (patch("update_rejection.wait_for_ui", return_value=("安装更新", Mock())),
+              patch("update_rejection.update_action"),
+              patch("update_rejection.time.monotonic", side_effect=(0, 0, 1)),
+              patch("update_rejection.time.sleep")):
+            with self.assertRaisesRegex(AssertionError, "No explicit system rejection"):
+                verify_rejection(device, timeout=0.5)
+        device.screenshot.assert_not_called()
+
+    def test_installer_rejection_does_not_pass_on_timeout(self):
+        device = Mock(device_type="tv")
+        with patch("update_rejection.wait_for_ui", return_value=("安装", Mock())):
+            with self.assertRaisesRegex(AssertionError, "No explicit system rejection"):
+                verify_rejection(device, timeout=0)
+        device.screenshot.assert_not_called()
 
     def test_nested_guide_rows_are_collected_without_duplicates(self):
         root = ET.fromstring('''<hierarchy><node><node><node text="00:00"/>
@@ -95,6 +140,13 @@ class UiRegressionTests(unittest.TestCase):
                                      "status": "success", "failed_after_first_frame": False})
         self.assertEqual(events[6]["status"], "failed")
         self.assertEqual(summarize([90, 30, 50]), {"p50_ms": 50, "p95_ms": 90, "max_ms": 90})
+
+    def test_recovery_requires_ordered_requests_for_the_measured_channel(self):
+        first = {"path": "/fail-tune-run-2.mp4"}
+        backup = {"path": "/media.mp4?recovery=run-2"}
+        self.assertTrue(saw_recovery([first, backup], "run", 2))
+        self.assertFalse(saw_recovery([backup, first], "run", 2))
+        self.assertFalse(saw_recovery([first, backup], "run", 3))
 
     def test_tune_preserves_first_frame_after_later_frames_and_failure(self):
         events = parse_tunes("first_frame_ms=80 tune_ms=80 recovery_ms=0 first_line=true tune_id=7\n"

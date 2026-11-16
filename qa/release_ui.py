@@ -89,7 +89,9 @@ class Device:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             root = self.tree()
-            if any(find(root, "获取更多应用", attr) is not None for attr in ("text", "content-desc")):
+            if find(root, "已安装的应用") is not None or any(
+                find(root, "获取更多应用", attr) is not None for attr in ("text", "content-desc")
+            ):
                 return
         shot = self.screenshot("tv", "launcher-apps")
         raise AssertionError(f"Launcher Apps list did not open after pressing OK: {shot}")
@@ -108,13 +110,16 @@ class Device:
         visits = {}
         for _ in range(24):
             root = self.tree()
+            if label == "应用" and find(root, "已安装的应用") is not None:
+                return
             focused = next((node for node in root.iter("node") if node.get("focused") == "true"), None)
             target = find(root, label, "content-desc")
             if target is None:
                 target = find(root, label)
             if focused is None or target is None:
                 raise AssertionError(f"Launcher focus or entry missing: {label}")
-            if label == "应用":
+            apps_badge = label == "应用" and not target.get("resource-id", "").endswith("tab_title_view")
+            if apps_badge:
                 selected = launcher_apps_highlight(self.adb("exec-out", "screencap", "-p"), target)
             else:
                 selected = find(focused, label, "content-desc") is not None or find(focused, label) is not None
@@ -131,7 +136,7 @@ class Device:
                 raise AssertionError(f"Launcher focus did not converge on {label}; check the highlighted item: {shot}")
             visits[step] = visits.get(step, 0) + 1
             self.key("KEYCODE_DPAD_" + direction)
-            if label == "应用" and launcher_apps_highlight(self.adb("exec-out", "screencap", "-p"), target):
+            if apps_badge and launcher_apps_highlight(self.adb("exec-out", "screencap", "-p"), target):
                 self.key("KEYCODE_DPAD_CENTER")
                 return
         raise AssertionError(f"Launcher entry is not reachable: {label}")
@@ -232,9 +237,13 @@ def focus_color_present(screenshot, node):
     if right - left < 4 or bottom - top < 4:
         return False
     crop = screenshot.crop((left, top, right, bottom))
-    colors = {(57, 86, 115), (76, 102, 128)}
-    return sum(count for count, color in crop.getcolors(crop.width * crop.height)
-               if color in colors) > crop.width * crop.height * 0.20
+    # Software and hardware rendering can round the same composited color differently.
+    colors = ((57, 86, 115), (76, 102, 128))
+    highlighted = sum(
+        count for count, color in crop.getcolors(crop.width * crop.height)
+        if any(all(abs(actual - expected) <= 1 for actual, expected in zip(color, target)) for target in colors)
+    )
+    return highlighted > crop.width * crop.height * 0.20
 
 
 def tv_highlight(device, root=None, screenshot=None):
