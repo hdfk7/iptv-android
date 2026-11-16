@@ -18,7 +18,7 @@ class IptvApplication : Application() {
         val store = AppUpdateStore(this)
         val release = store.installingRelease()?.takeIf(predicate = { pending -> pending.sha256 != null }) ?: return
         thread(name = "iptv-update-verification", block = {
-            val result = installedReleaseMessage(this, release)
+            val result = installedReleaseMessage(this, release, store.previousInstallDigest())
             if (result != null) {
                 store.clearInstalling()
                 if (result == R.string.app_update_installed_checksum_mismatch) {

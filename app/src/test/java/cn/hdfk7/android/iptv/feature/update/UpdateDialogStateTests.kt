@@ -47,6 +47,16 @@ class UpdateDialogStateTests {
     }
 
     @Test
+    fun unchangedSameVersionApkDoesNotMaskCancellation(): Unit {
+        val unchanged = installedDigestMessage("new", "OLD", "old")
+        assertNull(unchanged)
+        assertEquals(R.string.app_update_install_cancelled,
+            installationResultMessage(unchanged, Activity.RESULT_CANCELED, 0))
+        assertEquals(R.string.app_update_install_complete, installedDigestMessage("new", "NEW", "old"))
+        assertEquals(R.string.app_update_installed_checksum_mismatch, installedDigestMessage("new", "other", "old"))
+    }
+
+    @Test
     fun manifestAndDownloadFailuresOfferTheirOwnRecovery(): Unit {
         val failedCheck = UpdateDialogState.Available(Result.failure(IllegalStateException()))
         val failedDownload = UpdateDialogState.Available(Result.success(release), message = 1)

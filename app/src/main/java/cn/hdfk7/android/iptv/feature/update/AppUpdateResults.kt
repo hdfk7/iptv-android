@@ -42,3 +42,11 @@ internal fun installationResultMessage(installedMessage: Int?, resultCode: Int, 
         else -> installationFailureMessage(failureCode)
     }
 }
+
+internal fun installedDigestMessage(expected: String, actual: String?, previous: String?): Int? {
+    return when {
+        expected.equals(actual, ignoreCase = true) -> R.string.app_update_install_complete
+        previous != null && previous.equals(actual, ignoreCase = true) -> null
+        else -> R.string.app_update_installed_checksum_mismatch
+    }
+}

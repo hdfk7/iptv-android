@@ -73,7 +73,7 @@ private fun installerIntent(context: Context, apk: File): Intent {
 }
 
 @Suppress("DEPRECATION")
-internal fun installedReleaseMessage(context: Context, release: AppRelease): Int? {
+internal fun installedReleaseMessage(context: Context, release: AppRelease, previousDigest: String?): Int? {
     val info = context.packageManager.getPackageInfo(context.packageName, 0)
     val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         info.longVersionCode
@@ -84,11 +84,9 @@ internal fun installedReleaseMessage(context: Context, release: AppRelease): Int
         return null
     }
     val source = info.applicationInfo?.sourceDir
-    return if (release.sha256 == null || (source != null && File(source).matchesUpdateDigest(release.sha256))) {
-        R.string.app_update_install_complete
-    } else {
-        R.string.app_update_installed_checksum_mismatch
-    }
+    val expected = release.sha256 ?: return R.string.app_update_install_complete
+    val actual = source?.let(block = { path -> File(path).updateDigest() })
+    return installedDigestMessage(expected, actual, previousDigest)
 }
 
 @Composable
@@ -107,7 +105,7 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     val validating by validation.collectAsState()
     val currentState = state
     val latest = currentState.release
-    val update = latest?.takeIf(predicate = { release -> release.differsFrom(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME) })
+    val update = latest.takeUnless(predicate = { _ -> currentState is UpdateDialogState.Available && !currentState.isUpdate })
     val ready = currentState as? UpdateDialogState.Ready
     val downloading = currentState is UpdateDialogState.Downloading
     val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult(), onResult = { outcome ->
@@ -123,7 +121,7 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         }
         val target = store.installingRelease()
         if (request != null && target?.matchesInstallation(request.release) == true) {
-            val installed = withContext(context = Dispatchers.IO, block = { installedReleaseMessage(context, target) })
+            val installed = withContext(context = Dispatchers.IO, block = { installedReleaseMessage(context, target, store.previousInstallDigest()) })
             if (state === currentState) {
                 val message = installationResultMessage(installed, outcome[0], outcome[1])
                 restoredInstallMessage = message
@@ -220,7 +218,7 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
         if (checkAttempt == 0) {
             val saved = withContext(context = Dispatchers.IO, block = {
                 val release = store.pendingRelease()
-                if (release == null) {
+                if (release == null || !store.isUpdate(release)) {
                     if (store.apk.exists()) {
                         store.discard()
                     }
@@ -243,18 +241,18 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
             }
         }
         if (address.isNotBlank()) {
-            val result = withContext(context = Dispatchers.IO, block = {
+            state = withContext(context = Dispatchers.IO, block = {
                 try {
-                    Result.success(readAppRelease(address))
+                    val release = readAppRelease(address)
+                    UpdateDialogState.Available(Result.success(release), isUpdate = store.isUpdate(release))
                 } catch (_: TimeoutCancellationException) {
-                    Result.failure(AppUpdateDownloadException(R.string.app_update_check_timeout))
+                    UpdateDialogState.Available(Result.failure(AppUpdateDownloadException(R.string.app_update_check_timeout)))
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    Result.failure(failure)
+                    UpdateDialogState.Available(Result.failure(failure))
                 }
             })
-            state = UpdateDialogState.Available(result)
         }
     })
     val startDownload: () -> Unit = {

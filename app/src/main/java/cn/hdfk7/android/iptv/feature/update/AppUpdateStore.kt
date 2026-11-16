@@ -4,7 +4,7 @@ import android.content.Context
 import cn.hdfk7.android.iptv.BuildConfig
 import java.io.File
 
-internal class AppUpdateStore(context: Context) {
+internal class AppUpdateStore(private val context: Context) {
     private val preferences = context.getSharedPreferences("app_update", Context.MODE_PRIVATE)
     private val installation = context.getSharedPreferences("app_update_installation", Context.MODE_PRIVATE)
     val directory = File(context.filesDir, "updates")
@@ -18,8 +18,15 @@ internal class AppUpdateStore(context: Context) {
         val name = preferences.getString("name", null) ?: return null
         val url = preferences.getString("url", null) ?: return null
         return AppRelease(version, name, url, preferences.getString("notes", "").orEmpty(), preferences.getString("sha256", null))
-            .takeIf(predicate = { release -> release.differsFrom(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME) })
     }
+
+    fun isUpdate(release: AppRelease): Boolean {
+        return release.isUpdateFor(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME, installedDigest = ::installedDigest)
+    }
+
+    private fun installedDigest(): String? = File(context.applicationInfo.sourceDir).updateDigest()
+
+    fun previousInstallDigest(): String? = installation.getString("previousDigest", null)
 
     fun save(release: AppRelease): Boolean {
         return preferences.edit()
@@ -32,7 +39,14 @@ internal class AppUpdateStore(context: Context) {
     }
 
     fun markInstalling(release: AppRelease): Boolean {
+        val previousDigest = if (release.sha256 != null &&
+            !release.differsFrom(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME)) {
+            installedDigest() ?: return false
+        } else {
+            null
+        }
         return installation.edit().clear()
+            .putString("previousDigest", previousDigest)
             .putInt("version", release.versionCode)
             .putString("name", release.versionName)
             .putString("sha256", release.sha256)

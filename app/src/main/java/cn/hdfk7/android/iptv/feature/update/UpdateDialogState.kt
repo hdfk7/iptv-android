@@ -18,7 +18,8 @@ internal sealed interface UpdateDialogState {
     data class Available(
         val result: Result<AppRelease>,
         override val message: Int? = null,
-        val recovery: UpdateAction = UpdateAction.Download
+        val recovery: UpdateAction = UpdateAction.Download,
+        val isUpdate: Boolean = true
     ) : UpdateDialogState {
         override val release: AppRelease?
             get() = result.getOrNull()

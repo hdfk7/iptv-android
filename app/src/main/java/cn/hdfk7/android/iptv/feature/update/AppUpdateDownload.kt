@@ -151,6 +151,10 @@ internal fun File.matchesUpdateDigest(expected: String?): Boolean {
     if (expected == null) {
         return true
     }
+    return expected.equals(updateDigest(), ignoreCase = true)
+}
+
+internal fun File.updateDigest(): String? {
     return try {
         val digest = MessageDigest.getInstance("SHA-256")
         inputStream().use(block = { input ->
@@ -163,9 +167,9 @@ internal fun File.matchesUpdateDigest(expected: String?): Boolean {
                 digest.update(buffer, 0, count)
             }
         })
-        digest.digest().toHexString().equals(expected, ignoreCase = true)
+        digest.digest().toHexString()
     } catch (_: IOException) {
-        false
+        null
     }
 }
 

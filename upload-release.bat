@@ -3,8 +3,9 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 rem Build the release APK and upload it with latest.json to the site directory.
 rem Usage:
-rem   upload-release.bat              build + upload (also removes older APKs on the server)
+rem   upload-release.bat              build + upload (keeps previous APK)
 rem   upload-release.bat -skipbuild   upload existing artifacts only
+rem   upload-release.bat -rollback    restore the previous release
 
 set "TARGET=%IPTV_DEPLOY_TARGET%"
 if "%TARGET%"=="" set "TARGET=root@bastion"
@@ -19,6 +20,13 @@ for %%a in (%*) do (
 )
 
 cd /d "%~dp0"
+
+if /i "%~1"=="-rollback" (
+    ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && flock -w 60 .release.lock python3 - rollback" < release-activate.py
+    if errorlevel 1 exit /b 1
+    echo %PUBLIC_BASE%/latest.json
+    exit /b 0
+)
 
 if "%SKIP_BUILD%"=="0" (
     echo -- clean build outputs
@@ -109,7 +117,7 @@ if errorlevel 1 (
     echo [error] manifest upload failed
     exit /b 1
 )
-ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && (timeout 60 flock 9 && test -s '%STAGED_APK%' && test -s '%STAGED_MANIFEST%' && mv -f -- '%STAGED_APK%' '%APK_NAME%' && mv -f -- '%STAGED_MANIFEST%' latest.json && rmdir -- '%STAGE%' && find . -maxdepth 1 -type f -name 'IPTV-release-*.apk' -not -name '%APK_NAME%' -delete && ls -lh -- '%APK_NAME%' latest.json) 9>.release.lock"
+ssh -o BatchMode=yes "%TARGET%" "cd '%REMOTE_DIR%' && flock -w 60 .release.lock python3 - '%STAGE%'" < release-activate.py
 if errorlevel 1 (
     echo [error] could not activate release
     exit /b 1
