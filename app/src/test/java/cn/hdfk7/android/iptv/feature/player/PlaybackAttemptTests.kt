@@ -7,6 +7,30 @@ import org.junit.jupiter.api.Test
 
 class PlaybackAttemptTests {
     @Test
+    fun callbacksFromPreviousChannelCannotClaimTheNewAttempt(): Unit {
+        val session = PlaybackSession()
+        val old = session.startAttempt("same-url", 0L)
+        session.invalidate()
+        val current = session.startAttempt("same-url", 1L)
+        assertFalse(session.owns(old, old.id))
+        assertFalse(session.owns(current, old.id))
+        assertTrue(session.owns(current, current.id))
+    }
+
+    @Test
+    fun restartingPlayerForProxyChangeInvalidatesQueuedFallback(): Unit {
+        val session = PlaybackSession()
+        val attempt = session.startAttempt("first", 0L)
+        val queuedGeneration = session.generation
+        session.clearAttempt()
+        assertFalse(session.owns(attempt, attempt.id))
+        assertTrue(session.isCurrent(queuedGeneration))
+        session.invalidate()
+        session.startAttempt("first", 1L)
+        assertFalse(session.isCurrent(queuedGeneration))
+    }
+
+    @Test
     fun readyVideoWaitsForFirstFrameButAudioOnlyCanStart(): Unit {
         val attempt = PlaybackAttempt("1", "test", 100L)
         assertEquals(PlaybackStatus.LOADING, attempt.status(true, true, true, false))

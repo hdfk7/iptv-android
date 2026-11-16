@@ -69,8 +69,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     var player: ExoPlayer? by mutableStateOf(null)
         private set
     private var httpClient: okhttp3.OkHttpClient? = null
-    @Volatile private var attempt: PlaybackAttempt? = null
-    private var attemptNumber = 0L
+    private val playbackSession = PlaybackSession()
+    private val attempt: PlaybackAttempt?
+        get() = playbackSession.attempt
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var activeChannel: Channel? = null
     private var streamIndex = 0
@@ -136,7 +137,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         .build()
     private var timeout: Job? = null
     private var fallback: Job? = null
-    private var generation = 0
+    private val generation: Int
+        get() = playbackSession.generation
     private val lineFailures = mutableListOf<PlaybackFailure>()
     private var refreshJob: Job? = null
     private val guide = PlayerProgrammeGuide(
@@ -354,14 +356,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         toggleFavorite(channel)
     }
 
-    private fun stopStream() {
-        generation += 1
+    private fun invalidatePlayback(): Unit {
+        playbackSession.invalidate()
         fallback?.cancel()
         timeout?.cancel()
+    }
+
+    private fun stopStream() {
+        invalidatePlayback()
         wantsPlayback = false
         previewing = false
         clearPreviewScan()
-        attempt = null
         player?.stop()
         player?.clearMediaItems()
         mutableState.value = state.value.copy(playback = PlaybackStatus.IDLE, previewFrameVisible = false, cachedPreviewFrame = null,
@@ -495,10 +500,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun stop() {
         guideForeground = false
         guide.stop()
-        generation += 1
-        fallback?.cancel()
-        timeout?.cancel()
-        attempt = null
+        invalidatePlayback()
         clearPreviewScan()
         mutableState.value = state.value.copy(previewFrameVisible = false)
         val current = player
@@ -549,9 +551,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun selectLine(channel: Channel, index: Int, playing: Boolean = true) {
-        generation += 1
-        fallback?.cancel()
-        timeout?.cancel()
+        invalidatePlayback()
         activeChannel = channel
         tuneStartedAt = SystemClock.elapsedRealtime()
         fallbackStartedAt = 0L
@@ -573,7 +573,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch(block = {
                 val cached = withContext(Dispatchers.IO, block = { standbyFrames.read(key) })
                 val current = activeChannel
-                if (cached != null && generation == expectedGeneration && previewing && current != null && previewKey(current) == key &&
+                if (cached != null && playbackSession.isCurrent(expectedGeneration) && previewing && current != null && previewKey(current) == key &&
                     !state.value.previewFrameVisible) {
                     mutableState.value = state.value.copy(cachedPreviewFrame = cached)
                 }
@@ -691,7 +691,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun playLine() {
         val channel = activeChannel ?: return
         val current = player ?: return
-        attempt = null
+        playbackSession.clearAttempt()
         clearPreviewScan()
         timeout?.cancel()
         val limit = channel.streams.size
@@ -715,8 +715,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             // Reset the decoder before switching between independent live streams.
             current.stop()
         }
-        val active = PlaybackAttempt((++attemptNumber).toString(), channel.streams[streamIndex], SystemClock.elapsedRealtime())
-        attempt = active
+        val active = playbackSession.startAttempt(channel.streams[streamIndex], SystemClock.elapsedRealtime())
         current.setMediaItem(MediaItem.Builder().setMediaId(active.id).setUri(active.address).build())
         current.playWhenReady = wantsPlayback
         current.prepare()
@@ -773,7 +772,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         val channel = activeChannel ?: return
         val url = channel.streams[streamIndex]
-        attempt = null
+        playbackSession.clearAttempt()
         if (fallbackStartedAt == 0L) {
             fallbackStartedAt = SystemClock.elapsedRealtime()
         }
@@ -788,7 +787,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         // Defer to avoid modifying the player inside its event dispatch.
         fallback = viewModelScope.launch(block = {
             yield()
-            if (generation == expectedGeneration) {
+            if (playbackSession.isCurrent(expectedGeneration)) {
                 fallback = null
                 playLine()
             }
@@ -859,7 +858,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun ownsAttempt(current: Player, active: PlaybackAttempt): Boolean {
-        return player === current && attempt === active && current.currentMediaItem?.mediaId == active.id
+        return player === current && playbackSession.owns(active, current.currentMediaItem?.mediaId)
     }
 
     private fun isCompletedRecording(current: Player): Boolean {
