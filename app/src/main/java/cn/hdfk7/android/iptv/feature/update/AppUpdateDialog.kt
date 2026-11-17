@@ -2,8 +2,11 @@ package cn.hdfk7.android.iptv.feature.update
 
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.text.format.Formatter
@@ -59,17 +62,23 @@ private suspend fun readAppRelease(address: String): AppRelease {
     }
 }
 
-@Suppress("DEPRECATION")
-private fun installerIntent(context: Context, apk: File): Intent {
+private fun installerUri(context: Context, apk: File): Uri {
     // Some installers persist staged APKs by URI even after the source file changes.
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
+    return FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
         .buildUpon()
         .appendQueryParameter("installAttempt", UUID.randomUUID().toString())
         .build()
-    return Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri, "application/vnd.android.package-archive")
+}
+
+@Suppress("DEPRECATION")
+private fun installerIntent(context: Context, uri: Uri): Intent {
+    val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri, "application/vnd.android.package-archive")
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         .putExtra(Intent.EXTRA_RETURN_RESULT, true)
-        .also(block = { intent -> intent.clipData = ClipData.newRawUri("APK", uri) })
+        .also(block = { request -> request.clipData = ClipData.newRawUri("APK", uri) })
+    val activity = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY or PackageManager.MATCH_SYSTEM_ONLY)
+        ?.activityInfo ?: throw ActivityNotFoundException()
+    return intent.setComponent(ComponentName(activity.packageName, activity.name))
 }
 
 @Suppress("DEPRECATION")
@@ -146,10 +155,14 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
                 state = UpdateDialogState.Installing(allowed)
                 scope.launch(block = {
                     val message = try {
-                        if (!withContext(context = Dispatchers.IO, block = { store.markInstalling(candidate.release) })) {
+                        val uri = installerUri(context, apk)
+                        val intent = installerIntent(context, uri)
+                        if (!withContext(context = Dispatchers.IO, block = { store.markInstalling(candidate.release, uri) })) {
                             R.string.app_update_save_failed
                         } else {
-                            installer.launch(installerIntent(context, apk))
+                            // The installer can forward the request to another activity before reading the APK.
+                            context.grantUriPermission(checkNotNull(intent.component).packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            installer.launch(intent)
                             null
                         }
                     } catch (cancelled: CancellationException) {

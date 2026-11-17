@@ -1,6 +1,9 @@
 package cn.hdfk7.android.iptv.feature.update
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.net.toUri
 import cn.hdfk7.android.iptv.BuildConfig
 import java.io.File
 
@@ -38,14 +41,16 @@ internal class AppUpdateStore(private val context: Context) {
             .commit()
     }
 
-    fun markInstalling(release: AppRelease): Boolean {
+    fun markInstalling(release: AppRelease, uri: Uri): Boolean {
         val previousDigest = if (release.sha256 != null &&
             !release.differsFrom(BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME)) {
             installedDigest() ?: return false
         } else {
             null
         }
+        revokeInstallerReadPermission()
         return installation.edit().clear()
+            .putString("apkUri", uri.toString())
             .putString("previousDigest", previousDigest)
             .putInt("version", release.versionCode)
             .putString("name", release.versionName)
@@ -63,7 +68,13 @@ internal class AppUpdateStore(private val context: Context) {
     }
 
     fun clearInstalling(): Unit {
+        revokeInstallerReadPermission()
         installation.edit().clear().apply()
+    }
+
+    private fun revokeInstallerReadPermission(): Unit {
+        val uri = installation.getString("apkUri", null) ?: return
+        context.revokeUriPermission(uri.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
     fun shouldResume(): Boolean {
