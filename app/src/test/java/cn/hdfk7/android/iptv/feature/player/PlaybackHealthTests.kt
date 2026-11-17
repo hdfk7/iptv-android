@@ -1,9 +1,37 @@
 package cn.hdfk7.android.iptv.feature.player
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 
 class PlaybackHealthTests {
+    @Test
+    fun firstFrameStartsANewStallBudget(): Unit {
+        val attempt = PlaybackAttempt("one", "line", 0)
+        val health = PlaybackHealth(attempt, limit = 3_000)
+        assertEquals(PlaybackHealth.Decision.Continue, health.sample(2_500, true, false, false, false, true, true, 0))
+        attempt.firstFrameAt = 2_600
+        assertEquals(PlaybackHealth.Decision.Continue, health.sample(3_000, true, false, false, false, true, true, 1))
+        assertEquals(PlaybackHealth.Decision.Continue, health.sample(5_000, true, false, false, false, true, true, 1))
+        assertEquals(PlaybackHealth.Decision.Fallback, health.sample(5_500, true, false, false, false, true, true, 1))
+    }
+
+    @Test
+    fun resumedVideoClearsPreviousStalls(): Unit {
+        val attempt = PlaybackAttempt("one", "line", 0).also(block = { value -> value.firstFrameAt = 300 })
+        val health = PlaybackHealth(attempt, limit = 3_000)
+        for (second in 1L..6L) {
+            val buffering = second % 2L == 0L
+            assertNotEquals(PlaybackHealth.Decision.Fallback, health.sample(
+                now = second * 1_000, wantsPlayback = true, previewing = false, audioOnly = false,
+                playing = !buffering, buffering = buffering, videoExpected = true,
+                renderedFrames = ((second + 1) / 2 * 30).toInt()
+            ))
+        }
+        assertNotEquals(PlaybackHealth.Decision.Fallback, health.sample(7_000, true, false, false, false, true, true, 90))
+        assertEquals(PlaybackHealth.Decision.Fallback, health.sample(8_000, true, false, false, false, true, true, 90))
+    }
+
     @Test
     fun firstFrameTimeoutAppliesToPlaybackAndStandby(): Unit {
         val playing = PlaybackHealth(PlaybackAttempt("one", "line", 0), limit = 3_000)

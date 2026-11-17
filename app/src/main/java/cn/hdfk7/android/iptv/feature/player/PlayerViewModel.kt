@@ -777,6 +777,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         val channel = activeChannel ?: return
         val url = channel.streams[streamIndex]
+        if (BuildConfig.APP_DEBUG_SWITCH) {
+            val current = player
+            val active = attempt
+            val counters = current?.videoDecoderCounters
+            counters?.ensureUpdated()
+            Log.d("IptvPlayback", "line_fallback tune_id=$generation line=${streamIndex + 1} cause=$reason " +
+                "elapsed_ms=${active?.let(block = { value -> SystemClock.elapsedRealtime() - value.startedAt })} " +
+                "first_frame=${active?.firstFrameAt != null} state=${current?.playbackState} " +
+                "playing=${current?.isPlaying} position_ms=${current?.currentPosition} " +
+                "buffered_ms=${current?.totalBufferedDuration} rendered_frames=${counters?.renderedOutputBufferCount}")
+        }
         playbackSession.clearAttempt()
         if (fallbackStartedAt == 0L) {
             fallbackStartedAt = SystemClock.elapsedRealtime()

@@ -51,7 +51,7 @@ android {
         buildConfigField "boolean", "APP_DEBUG_SWITCH", APP_DEBUG_SWITCH
         buildConfigField "int", "STREAM_CONNECT_TIMEOUT_MS", streamTimeout("STREAM_CONNECT_TIMEOUT_MS", 5000)
         buildConfigField "int", "STREAM_READ_TIMEOUT_MS", streamTimeout("STREAM_READ_TIMEOUT_MS", 5000)
-        buildConfigField "int", "STREAM_PROBE_TIMEOUT_MS", streamTimeout("STREAM_PROBE_TIMEOUT_MS", 8000)
+        buildConfigField "int", "STREAM_PROBE_TIMEOUT_MS", streamTimeout("STREAM_PROBE_TIMEOUT_MS", 15000)
     }
     buildFeatures {
         resValues = true
