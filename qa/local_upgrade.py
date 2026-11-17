@@ -83,6 +83,19 @@ def snapshot(device, stage, url):
             "favoriteCount": int(counts[0]), "visibleFavorites": sorted(favorites), "visibleRecent": sorted(recent)}
 
 
+def same_upgrade_data(before, after):
+    if before == after:
+        return True
+    direct = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
+    proxy = "https://gh.bravetimes.cn/https://raw.githubusercontent.com/best-fan/iptv-sources/master/cn_all.m3u8"
+    old_default = hashlib.sha256(direct.encode()).hexdigest()
+    new_default = hashlib.sha256(proxy.encode()).hexdigest()
+    expected = dict(before)
+    expected["visibleSubscriptionHashes"] = sorted(
+        new_default if digest == old_default else digest for digest in before["visibleSubscriptionHashes"])
+    return expected == after
+
+
 def wait_for_ui(device, labels, timeout=90):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -330,7 +343,7 @@ def main():
             record = state["devices"][kind]
             try:
                 record["after"] = task.result()
-                record["passed"] = record["before"] == record["after"]
+                record["passed"] = same_upgrade_data(record["before"], record["after"])
                 assert record["passed"], "visible data differs after the upgrade"
                 record.pop("error", None)
                 print(f"{kind}: upgrade and data checks passed", flush=True)

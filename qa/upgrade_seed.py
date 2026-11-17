@@ -20,6 +20,13 @@ def control(root, label):
     return item if item is not None else find(root, label, "content-desc")
 
 
+def channel_panel_open(root):
+    if any(control(root, label) is not None for label in ("全部", "暂无节目", "暂无收藏")):
+        return True
+    return any(len(node.get("text", "")) == 3 and node.get("text", "").isdecimal()
+               for node in root.iter("node"))
+
+
 def type_in_field(device, value):
     field = next((node for node in device.tree().iter("node")
                   if node.get("focused") == "true" and node.get("class") == "android.widget.EditText"), None)
@@ -47,8 +54,8 @@ def open_app(device):
 def close_panels(device):
     for _ in range(6):
         root = device.tree()
-        labels = ("刷新频道", "添加源", "关闭设置", "检查应用更新", "IP 地址", "全部")
-        if not any(control(root, label) is not None for label in labels):
+        labels = ("刷新频道", "添加源", "关闭设置", "检查应用更新", "IP 地址")
+        if not channel_panel_open(root) and not any(control(root, label) is not None for label in labels):
             return
         device.key("KEYCODE_BACK")
     raise AssertionError("App panel did not close")
@@ -125,11 +132,15 @@ def open_channels(device):
     close_panels(device)
     if device.device_type == "tv":
         device.key("KEYCODE_DPAD_LEFT")
-        if control(device.tree(), "全部") is None:
+        if not channel_panel_open(device.tree()):
             device.key("KEYCODE_DPAD_LEFT")
     else:
-        device.tap(device.player_control("频道"))
-    assert control(device.tree(), "全部") is not None, "Channel list did not open"
+        for _ in range(3):
+            device.tap(device.player_control("频道"))
+            if channel_panel_open(device.tree()):
+                return
+        raise AssertionError("Channel list did not open after reopening the playback controls")
+    assert channel_panel_open(device.tree()), "Channel list did not open"
 
 
 def add_source(device, name, url, guide):
@@ -160,11 +171,24 @@ def select_channel(device, name):
         assert any(label.isdecimal() for label in current), current
         device.choose_with_remote(name, direction, limit=4)
     else:
-        root = device.tree()
-        rows = [item for item in root.iter("node") if item.get("clickable") == "true"
-                and find(item, name) is not None]
-        assert rows, f"Controlled test channel is missing: {name}"
-        device.tap(rows[-1])
+        for _ in range(5):
+            root = device.tree()
+            rows = [item for item in root.iter("node") if item.get("clickable") == "true"
+                    and find(item, name) is not None]
+            if rows:
+                device.tap(rows[-1])
+                return
+            catalog = next((node for node in root.iter("node") if node.get("scrollable") == "true"
+                            and channel_panel_open(node)), None)
+            if catalog is None:
+                break
+            left, top, right, bottom = bounds(catalog)
+            x = str((left + right) // 2)
+            upper = top + (bottom - top) // 4
+            lower = bottom - (bottom - top) // 4
+            start, end = (lower, upper) if name == HISTORY_CHANNEL else (upper, lower)
+            device.input("swipe", x, str(start), x, str(end), "350")
+        raise AssertionError(f"Controlled test channel is missing: {name}")
 
 
 def seed(device, url, guide):

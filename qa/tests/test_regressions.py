@@ -17,13 +17,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import release_ui
 from controlled_ui import guide_address, programme_rows
 from fixture_server import FixtureServer
-from local_upgrade import finish_installation
+from local_upgrade import finish_installation, same_upgrade_data
 from release_tune import parse_tunes, saw_recovery, summarize
 from update_rejection import verify_rejection
-from upgrade_seed import type_in_field
+from upgrade_seed import channel_panel_open, type_in_field
 
 
 class UiRegressionTests(unittest.TestCase):
+    def test_channel_list_without_group_tabs_is_still_open(self):
+        panel = ET.fromstring('<hierarchy><node text="001"/><node text="QA Release"/></hierarchy>')
+        controls = ET.fromstring('<hierarchy><node text="频道"/><node text="更多"/></hierarchy>')
+        self.assertTrue(channel_panel_open(panel))
+        self.assertFalse(channel_panel_open(controls))
+
+    def test_upgrade_accepts_only_the_expected_default_subscription_address_change(self):
+        direct = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
+        proxy = "https://gh.bravetimes.cn/https://raw.githubusercontent.com/best-fan/iptv-sources/master/cn_all.m3u8"
+        custom = "https://example.org/list.m3u8"
+
+        def snapshot(address):
+            return {"visibleSubscriptionHashes": sorted(hashlib.sha256(url.encode()).hexdigest()
+                                                       for url in (address, custom)),
+                    "favoriteCount": 1, "visibleRecent": ["Previously watched"]}
+
+        before = snapshot(direct)
+        after = snapshot(proxy)
+        self.assertTrue(same_upgrade_data(before, after))
+        self.assertFalse(same_upgrade_data(before, dict(after, favoriteCount=0)))
+        self.assertFalse(same_upgrade_data(before, snapshot("https://example.org/replacement.m3u8")))
+
     def test_tv_launch_opens_apps_before_selecting_iptv(self):
         device = release_ui.Device("offline-test", "tv")
         device.key = Mock()
