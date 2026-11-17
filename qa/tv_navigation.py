@@ -101,9 +101,12 @@ def verify_navigation(device):
         device.key("KEYCODE_DPAD_UP")
         root, tabs = snapshot(device, "07-top-skips-guide-button")
         assert tabs and "节目单" not in tabs and not any(label.isdecimal() for label in tabs)
+        device.key("KEYCODE_DPAD_UP", "KEYCODE_DPAD_UP")
+        root, still_on_tab = snapshot(device, "07-top-up-stays-on-tab")
+        assert still_on_tab == tabs, "Tab UP moved focus off the group tab"
         device.key("KEYCODE_DPAD_DOWN")
         root, restored = snapshot(device, "07-top-return")
-        assert restored[:2] == channel[:2], "Tab DOWN did not return directly to the playing channel"
+        assert "001" in restored, "Tab DOWN after reaching the tab from the top row did not focus the first channel"
 
         for _ in range(8):
             device.key("KEYCODE_DPAD_DOWN")

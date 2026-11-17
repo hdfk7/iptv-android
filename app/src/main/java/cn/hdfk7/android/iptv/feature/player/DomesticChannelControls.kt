@@ -44,16 +44,17 @@ internal fun ChannelGroupControls(
     television: Boolean,
     onSelect: (DomesticChannelGroup) -> Unit,
     modifier: Modifier = Modifier,
-    onEnterChannels: () -> Unit = {}
+    onEnterChannels: (Boolean) -> Unit
 ): Unit {
     var focused by remember(calculation = { mutableStateOf(false) })
     val remote = if (television) {
         Modifier.onFocusChanged(onFocusChanged = { focus -> focused = focus.isFocused })
             .onPreviewKeyEvent(onPreviewKeyEvent = { event ->
                 when (event.key) {
-                    Key.DirectionDown, Key.DirectionUp, Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                    Key.DirectionUp -> true
+                    Key.DirectionDown, Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                         if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
-                            onEnterChannels()
+                            onEnterChannels(event.key == Key.DirectionDown)
                         }
                         true
                     }

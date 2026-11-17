@@ -85,6 +85,7 @@ internal fun ChannelPanel(
     onConfirmSelect: () -> Unit,
     onRight: () -> Unit,
     onLeftToHeader: () -> Unit,
+    onTopBoundary: () -> Unit,
     onBottomBoundary: () -> Unit,
     domestic: Boolean,
     groupKey: String,
@@ -172,7 +173,7 @@ internal fun ChannelPanel(
                         val targetIndex = focusedIndex + step
                         val target = channels.getOrNull(targetIndex)
                         if (target == null) {
-                            val boundary = if (step < 0) onLeftToHeader else onBottomBoundary
+                            val boundary = if (step < 0) onTopBoundary else onBottomBoundary
                             if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0 && pendingFocusMove?.isActive != true) {
                                 boundary()
                             }

@@ -46,6 +46,7 @@ import cn.hdfk7.android.iptv.core.ui.theme.Gold
 import cn.hdfk7.android.iptv.core.ui.theme.Muted
 
 private enum class TvPanel { Controls, Channels, More }
+private enum class ChannelGroupFocusOrigin { Row, ListTop }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -68,7 +69,7 @@ internal fun CinemaPlayerScreen(
     var returnToSettings by remember(calculation = { mutableStateOf(false) })
     val groupFocus = remember(calculation = { FocusRequester() })
     var groupHasFocus by remember(calculation = { mutableStateOf(false) })
-    var navigatingGroups by remember(calculation = { mutableStateOf(false) })
+    var groupFocusOrigin by remember(state.activeSourceId, calculation = { mutableStateOf<ChannelGroupFocusOrigin?>(null) })
     val inputMode = LocalInputModeManager.current
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val hasChannels = state.channels.isNotEmpty()
@@ -100,7 +101,7 @@ internal fun CinemaPlayerScreen(
     val keepFocusInDrawer = television && visiblePanel == TvPanel.Channels && availableGroups.size > 1 && hasChannels
     val keepFocusInMore = television && visiblePanel == TvPanel.More
     val showPanel: (TvPanel) -> Unit = { target ->
-        navigatingGroups = false
+        groupFocusOrigin = null
         if (target == TvPanel.More) {
             returnToSettings = false
         }
@@ -117,7 +118,7 @@ internal fun CinemaPlayerScreen(
     val dismiss: () -> Unit = {
         panel = TvPanel.Controls
         groupHasFocus = false
-        navigatingGroups = false
+        groupFocusOrigin = null
         returnToMore = false
         viewModel.hideInformation()
     }
@@ -161,6 +162,7 @@ internal fun CinemaPlayerScreen(
                 val direction = if (key.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
                 val index = Math.floorMod(availableGroups.indexOf(activeGroup) + direction, availableGroups.size)
                 selectedGroup = availableGroups[index]
+                groupFocusOrigin = ChannelGroupFocusOrigin.Row
             }
             return@onPreviewKeyEvent true
         }
@@ -279,13 +281,21 @@ internal fun CinemaPlayerScreen(
             when (visiblePanel) {
                 TvPanel.Controls -> Unit
                 TvPanel.Channels -> key(state.activeSourceId, block = {
+                    val focusGroupHeader: (ChannelGroupFocusOrigin) -> Unit = { origin ->
+                        if (availableGroups.size > 1) {
+                            groupFocusOrigin = origin
+                            groupFocus.requestFocus()
+                        } else if (!keepFocusInDrawer) {
+                            channelsFocus.requestFocus()
+                        }
+                    }
                     ChannelPanel(
                         state = state,
                         channels = groups[activeGroup].orEmpty(),
                         onSelect = viewModel::select,
                         onGuide = onGuide,
                         onChannelFocused = { channel ->
-                            navigatingGroups = false
+                            groupFocusOrigin = null
                             browsedChannelId = channel.id
                         },
                         modifier = if (portrait) {
@@ -306,18 +316,12 @@ internal fun CinemaPlayerScreen(
                                 onGuide(guideChannel.id)
                             }
                         },
-                        onLeftToHeader = {
-                            if (availableGroups.size > 1) {
-                                navigatingGroups = true
-                                groupFocus.requestFocus()
-                            } else if (!keepFocusInDrawer) {
-                                channelsFocus.requestFocus()
-                            }
-                        },
+                        onLeftToHeader = { focusGroupHeader(ChannelGroupFocusOrigin.Row) },
+                        onTopBoundary = { focusGroupHeader(ChannelGroupFocusOrigin.ListTop) },
                         onBottomBoundary = { if (!keepFocusInDrawer) { channelsFocus.requestFocus() } },
                         domestic = domestic,
                         groupKey = activeGroup.name,
-                        requestDrawerFocus = television && windowFocused && !dialogOpen && !navigatingGroups,
+                        requestDrawerFocus = television && windowFocused && !dialogOpen && groupFocusOrigin == null,
                         groupControls = {
                             if (availableGroups.size > 1) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp), content = {
@@ -325,9 +329,14 @@ internal fun CinemaPlayerScreen(
                                         modifier = Modifier.focusRequester(groupFocus).onFocusChanged(onFocusChanged = { focus ->
                                             groupHasFocus = focus.hasFocus
                                         }),
-                                        onEnterChannels = {
-                                            navigatingGroups = false
-                                            selectedRowFocus.restore()
+                                        onEnterChannels = { fromDownKey ->
+                                            val firstChannelId = if (fromDownKey && groupFocusOrigin == ChannelGroupFocusOrigin.ListTop) {
+                                                groups[activeGroup]?.firstOrNull()?.id
+                                            } else {
+                                                null
+                                            }
+                                            groupFocusOrigin = null
+                                            selectedRowFocus.restore(firstChannelId)
                                         },
                                         onSelect = { group ->
                                             selectedGroup = group
