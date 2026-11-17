@@ -137,6 +137,8 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
                 state = request.copy(message = message)
                 store.clearInstalling()
             }
+        } else if (target != null) {
+            store.clearInstalling()
         }
         installerOutcome = null
     })
@@ -228,44 +230,42 @@ fun AppUpdateDialog(onClose: () -> Unit): Unit {
     }
     LaunchedEffect(key1 = address, key2 = checkAttempt, block = {
         state = UpdateDialogState.Checking
-        if (checkAttempt == 0) {
-            val saved = withContext(context = Dispatchers.IO, block = {
-                val release = store.pendingRelease()
-                if (release == null || !store.isUpdate(release)) {
-                    if (store.apk.exists()) {
-                        store.discard()
-                    }
-                    null
-                } else {
+        store.clearAuthorizing()
+        if (address.isBlank()) {
+            return@LaunchedEffect
+        }
+        val checked = withContext(context = Dispatchers.IO, block = {
+            try {
+                val release = readAppRelease(address)
+                val isUpdate = store.isUpdate(release)
+                val available = UpdateDialogState.Available(Result.success(release), isUpdate = isUpdate)
+                val saved = store.pendingRelease()
+                if (isUpdate && saved != null && release.matchesDownload(saved)) {
                     try {
                         validateUpdateApk(context, store.apk, release)
-                        release
+                        readyUpdate(context, release, store.apk)
                     } catch (_: AppUpdateDownloadException) {
                         store.discard()
-                        null
+                        available
                     }
+                } else {
+                    if (store.apk.exists() && store.installingRelease() == null) {
+                        store.discard()
+                    }
+                    available
                 }
-            })
-            store.clearAuthorizing()
-            if (saved != null) {
-                val ready = readyUpdate(context, saved, store.apk)
-                state = restoredInstallMessage?.let(block = { message -> ready.copy(message = message) }) ?: ready
-                return@LaunchedEffect
+            } catch (_: TimeoutCancellationException) {
+                UpdateDialogState.Available(Result.failure(AppUpdateDownloadException(R.string.app_update_check_timeout)))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                UpdateDialogState.Available(Result.failure(failure))
             }
-        }
-        if (address.isNotBlank()) {
-            state = withContext(context = Dispatchers.IO, block = {
-                try {
-                    val release = readAppRelease(address)
-                    UpdateDialogState.Available(Result.success(release), isUpdate = store.isUpdate(release))
-                } catch (_: TimeoutCancellationException) {
-                    UpdateDialogState.Available(Result.failure(AppUpdateDownloadException(R.string.app_update_check_timeout)))
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (failure: Exception) {
-                    UpdateDialogState.Available(Result.failure(failure))
-                }
-            })
+        })
+        state = if (checked is UpdateDialogState.Ready) {
+            restoredInstallMessage?.let(block = { message -> checked.copy(message = message) }) ?: checked
+        } else {
+            checked
         }
     })
     val startDownload: () -> Unit = {

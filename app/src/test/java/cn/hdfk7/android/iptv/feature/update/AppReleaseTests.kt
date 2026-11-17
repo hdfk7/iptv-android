@@ -22,6 +22,18 @@ class AppReleaseTests {
     }
 
     @Test
+    fun downloadedPackageMustMatchTheCurrentRelease(): Unit {
+        val current = AppRelease(33, "1.3.8", "https://example.test/current.apk", sha256 = "ABC")
+        assertTrue(current.matchesDownload(current.copy(notes = "Updated notes", sha256 = "abc")))
+        assertFalse(current.matchesDownload(current.copy(versionCode = 32, versionName = "1.3.7")))
+        assertFalse(current.matchesDownload(current.copy(sha256 = "def")))
+        assertFalse(current.matchesDownload(current.copy(sha256 = null)))
+        val legacy = current.copy(sha256 = null)
+        assertTrue(legacy.matchesDownload(legacy.copy(notes = "Updated notes")))
+        assertFalse(legacy.matchesDownload(legacy.copy(downloadUrl = "https://example.test/older.apk")))
+    }
+
+    @Test
     fun eitherVersionFieldCanOfferDownload(): Unit {
         assertTrue(AppRelease(31, "1.3.5", "").differsFrom(30L, "1.3.5"))
         assertTrue(AppRelease(30, "1.3.6", "").differsFrom(30L, "1.3.5"))
