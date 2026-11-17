@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
@@ -51,69 +54,82 @@ import cn.hdfk7.android.iptv.core.ui.components.tvPanelNavigation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-private enum class ProxyControl { Power, Host, Port, Username, Password, Save, Cancel }
+private enum class ProxyControl { Power, Host, Port, Username, Password, Close }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var saving by remember(calculation = { mutableStateOf(false) })
-    val close: () -> Unit = {
-        if (!saving) {
-            onClose()
-        }
-    }
+    val writes = remember(calculation = { Mutex() })
+    var proxyEnabled by remember(calculation = { mutableStateOf(store.current?.enabled == true) })
+    var switching by remember(calculation = { mutableStateOf(false) })
+    var closing by remember(calculation = { mutableStateOf(false) })
     var draft by remember(calculation = { mutableStateOf(store.current ?: ProxySettings()) })
     var error by remember(calculation = { mutableStateOf<Int?>(if (store.current == null) R.string.proxy_read_error else null) })
-    val updateDraft: (ProxySettings) -> Unit = { updated ->
-        draft = updated
-        error = null
-    }
     val configuration = LocalConfiguration.current
     val television = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     val twoColumns = television || configuration.screenWidthDp.dp >= FormTwoColumnWidth + 56.dp
-    val toggle: () -> Unit = {
-        val updated = draft.copy(enabled = !draft.enabled)
-        if (updated.valid()) {
-            updateDraft(updated)
-        } else {
-            error = R.string.proxy_invalid
+    val updateDraft: (ProxySettings) -> Unit = { updated ->
+        if (!proxyEnabled && !switching && !closing) {
+            draft = updated
+            error = null
         }
     }
-    val save: () -> Unit = save@{
-        if (saving) {
-            return@save
+    fun persist(switch: Boolean = false, dismiss: Boolean = false): Unit {
+        if (closing || (switching && switch)) {
+            return
         }
-        val settings = draft
-        if (!settings.valid()) {
-            error = R.string.proxy_invalid
-            return@save
+        val fields = draft
+        if (switch) {
+            switching = true
+            error = null
         }
-        val previous = store.current
-        if (settings == previous) {
-            onClose()
-            return@save
+        if (dismiss) {
+            closing = true
         }
-        saving = true
         scope.launch(block = {
             try {
-                withContext(context = Dispatchers.IO, block = { store.save(settings) })
+                writes.withLock(action = {
+                    val previous = store.current
+                    val settings = when {
+                        switch -> fields.copy(enabled = previous?.enabled != true)
+                        previous?.enabled == true -> previous
+                        else -> fields.copy(enabled = false)
+                    }
+                    if (!settings.valid()) {
+                        error = R.string.proxy_invalid
+                        return@withLock
+                    }
+                    if (settings != (previous ?: ProxySettings())) {
+                        withContext(context = Dispatchers.IO, block = { store.save(settings) })
+                        proxyEnabled = settings.enabled
+                        if (switch || previous == null) {
+                            onSaved()
+                        }
+                    }
+                })
+                if (dismiss) {
+                    onClose()
+                }
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
                 error = R.string.storage_error
-                return@launch
             } finally {
-                saving = false
+                if (switch) {
+                    switching = false
+                }
+                if (dismiss) {
+                    closing = false
+                }
             }
-            if (previous == null || previous.enabled || settings.enabled) {
-                onSaved()
-            }
-            onClose()
         })
     }
+    val close: () -> Unit = { persist(dismiss = true) }
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false), content = {
         val inputMode = LocalInputModeManager.current
         val view = LocalView.current
@@ -132,15 +148,29 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                 fieldsReady = true
             }
         })
-        val rows = remember(calculation = {
-            listOf(listOf(ProxyControl.Power), listOf(ProxyControl.Host, ProxyControl.Port),
-                listOf(ProxyControl.Username, ProxyControl.Password), listOf(ProxyControl.Save, ProxyControl.Cancel))
+        val rows = remember(proxyEnabled, calculation = {
+            val powerRow = listOf(ProxyControl.Power)
+            val closeRow = listOf(ProxyControl.Close)
+            if (proxyEnabled) {
+                listOf(powerRow, closeRow)
+            } else {
+                listOf(powerRow, listOf(ProxyControl.Host, ProxyControl.Port),
+                    listOf(ProxyControl.Username, ProxyControl.Password), closeRow)
+            }
         })
         var selectedControl by remember(calculation = { mutableStateOf(ProxyControl.Power) })
         var editing by remember(calculation = { mutableStateOf<ProxyControl?>(null) })
         val scroll = rememberScrollState()
         val fieldFocus = remember(calculation = { FocusRequester() })
         val keyboard = LocalSoftwareKeyboardController.current
+        val focusManager = LocalFocusManager.current
+        val canEdit = !proxyEnabled && !switching && !closing
+        val toggle: () -> Unit = {
+            selectedControl = ProxyControl.Power
+            persist(switch = true)
+            focusManager.clearFocus()
+            keyboard?.hide()
+        }
         val imeVisible = WindowInsets.isImeVisible
         LaunchedEffect(selectedControl, block = {
             if (television && selectedControl == ProxyControl.Power) {
@@ -148,6 +178,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
             }
         })
         val finishEditing: () -> Unit = {
+            focusManager.clearFocus()
             keyboard?.hide()
             editing = null
         }
@@ -173,6 +204,9 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
             }
         })
         val navigation = tvPanelNavigation(television && editing == null, onMove = { horizontal, vertical ->
+            if (switching || closing) {
+                return@tvPanelNavigation
+            }
             val row = rows.indexOfFirst(predicate = { controls -> selectedControl in controls })
             val column = rows[row].indexOf(selectedControl)
             val destination = rows[(row + vertical).coerceIn(0, rows.lastIndex)]
@@ -180,9 +214,12 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         }, onConfirm = {
             when (selectedControl) {
                 ProxyControl.Power -> toggle()
-                ProxyControl.Save -> save()
-                ProxyControl.Cancel -> close()
-                else -> editing = selectedControl
+                ProxyControl.Close -> close()
+                else -> {
+                    if (canEdit) {
+                        editing = selectedControl
+                    }
+                }
             }
         })
         fun highlighted(control: ProxyControl): Boolean? {
@@ -200,8 +237,15 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         }
         @Composable
         fun fieldModifier(control: ProxyControl): Modifier {
+            var wasFocused by remember(calculation = { mutableStateOf(false) })
+            val saveOnBlur = Modifier.onFocusChanged(onFocusChanged = { focusState ->
+                if (wasFocused && !focusState.isFocused && !proxyEnabled && !switching) {
+                    persist()
+                }
+                wasFocused = focusState.isFocused
+            })
             if (!television) {
-                return Modifier.focusProperties(scope = { canFocus = fieldsReady })
+                return saveOnBlur.focusProperties(scope = { canFocus = fieldsReady && canEdit })
             }
             val bringIntoView = remember(calculation = { BringIntoViewRequester() })
             val selected = selectedControl == control
@@ -212,21 +256,19 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                 }
             })
             val requester = if (editing == control) Modifier.focusRequester(fieldFocus) else Modifier
-            return requester.bringIntoViewRequester(bringIntoView).focusProperties(scope = { canFocus = editing == control })
+            return requester.bringIntoViewRequester(bringIntoView).then(saveOnBlur)
+                .focusProperties(scope = { canFocus = canEdit && editing == control })
         }
-        val actions = if (television) KeyboardActions(onDone = { finishEditing() }) else KeyboardActions.Default
+        val actions = KeyboardActions(onDone = { finishEditing() })
         fun keyboardOptions(type: KeyboardType = KeyboardType.Text): KeyboardOptions {
-            return if (television) {
-                KeyboardOptions(keyboardType = type, imeAction = ImeAction.Done, showKeyboardOnFocus = false)
-            } else {
-                KeyboardOptions(keyboardType = type, showKeyboardOnFocus = false)
-            }
+            return KeyboardOptions(keyboardType = type, imeAction = ImeAction.Done, showKeyboardOnFocus = false)
         }
+        val powerStatus = if (proxyEnabled) R.string.proxy_on else R.string.proxy_off
         val power: @Composable () -> Unit = {
             TvIconButton(
-                description = stringResource(if (draft.enabled) R.string.proxy_on else R.string.proxy_off),
+                description = stringResource(powerStatus),
                 icon = R.drawable.ic_power,
-                selected = draft.enabled,
+                selected = proxyEnabled,
                 onClick = toggle,
                 modifier = buttonModifier(ProxyControl.Power),
                 focusHighlight = highlighted(ProxyControl.Power)
@@ -236,26 +278,26 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
             OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Host), value = draft.host, onValueChange = { value -> updateDraft(draft.copy(host = value.trim())) },
                 label = { Text(stringResource(R.string.proxy_ip)) }, singleLine = true,
                 keyboardOptions = keyboardOptions(), keyboardActions = actions,
-                readOnly = television && editing != ProxyControl.Host, modifier = modifier.then(fieldModifier(ProxyControl.Host)))
+                enabled = !proxyEnabled, readOnly = !canEdit || television && editing != ProxyControl.Host, modifier = modifier.then(fieldModifier(ProxyControl.Host)))
         }
         val portField: @Composable (Modifier) -> Unit = { modifier ->
             OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Port), value = draft.port, onValueChange = { value -> updateDraft(draft.copy(port = value)) },
                 label = { Text(stringResource(R.string.proxy_port)) }, singleLine = true,
                 keyboardOptions = keyboardOptions(KeyboardType.Number), keyboardActions = actions,
-                readOnly = television && editing != ProxyControl.Port, modifier = modifier.then(fieldModifier(ProxyControl.Port)))
+                enabled = !proxyEnabled, readOnly = !canEdit || television && editing != ProxyControl.Port, modifier = modifier.then(fieldModifier(ProxyControl.Port)))
         }
         val usernameField: @Composable (Modifier) -> Unit = { modifier ->
             OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Username), value = draft.username, onValueChange = { value -> updateDraft(draft.copy(username = value)) },
                 label = { Text(stringResource(R.string.proxy_username)) }, singleLine = true,
                 keyboardOptions = keyboardOptions(), keyboardActions = actions,
-                readOnly = television && editing != ProxyControl.Username,
+                enabled = !proxyEnabled, readOnly = !canEdit || television && editing != ProxyControl.Username,
                 modifier = modifier.then(fieldModifier(ProxyControl.Username)))
         }
         val passwordField: @Composable (Modifier) -> Unit = { modifier ->
             OutlinedTextField(colors = tvTextFieldColors(highlighted = television && editing == null && selectedControl == ProxyControl.Password), value = draft.password, onValueChange = { value -> updateDraft(draft.copy(password = value)) },
                 label = { Text(stringResource(R.string.proxy_password)) }, visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = keyboardOptions(KeyboardType.Password), keyboardActions = actions, singleLine = true,
-                readOnly = television && editing != ProxyControl.Password,
+                enabled = !proxyEnabled, readOnly = !canEdit || television && editing != ProxyControl.Password,
                 modifier = modifier.then(fieldModifier(ProxyControl.Password)))
         }
         Box(
@@ -285,6 +327,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                         Row(verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
                                 DialogTitle(text = stringResource(R.string.proxy_title), modifier = Modifier.weight(1f))
+                                Text(text = stringResource(powerStatus), color = Accent, fontSize = 16.sp)
                                 power()
                             })
                         Column(
@@ -312,10 +355,8 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                             }
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
-                            TvIconButton(description = stringResource(R.string.proxy_save), icon = R.drawable.ic_check, onClick = save,
-                                modifier = buttonModifier(ProxyControl.Save), focusHighlight = highlighted(ProxyControl.Save))
-                            TvIconButton(description = stringResource(R.string.proxy_cancel), icon = R.drawable.ic_close, onClick = close,
-                                modifier = buttonModifier(ProxyControl.Cancel), focusHighlight = highlighted(ProxyControl.Cancel))
+                            TvIconButton(description = stringResource(R.string.proxy_close), icon = R.drawable.ic_close, onClick = close,
+                                modifier = buttonModifier(ProxyControl.Close), focusHighlight = highlighted(ProxyControl.Close))
                         })
                     }
                 )

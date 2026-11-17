@@ -76,7 +76,7 @@ def open_proxy(device):
 def enable_proxy(device, port):
     open_proxy(device)
     root = device.tree()
-    assert control(root, "已关闭") is not None, "Start this test with the App proxy disabled"
+    assert control(root, "关闭") is not None, "Start this test with the App proxy disabled"
     television = device.device_type == "tv"
     for label, value, direction in (("IP 地址", "127.0.0.1", "DOWN"), ("端口", str(port), "RIGHT")):
         if television:
@@ -87,13 +87,9 @@ def enable_proxy(device, port):
         close_keyboard(device)
     if television:
         device.key("KEYCODE_DPAD_UP", "KEYCODE_DPAD_CENTER")
-        assert control(device.tree(), "已开启") is not None
-        device.key("KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_DOWN")
-        device.choose_with_remote("保存", limit=1)
     else:
-        device.click("已关闭", "content-desc")
-        assert control(device.tree(), "已开启") is not None
-        device.click("保存", "content-desc")
+        device.click("关闭", "content-desc")
+    device.wait_for("开启", "content-desc")
     close_panels(device)
 
 
@@ -219,7 +215,7 @@ def main():
             assert pid and pid != args.old_pid, "The App is still running in the original process"
             open_proxy(device)
             root = device.tree()
-            assert all(control(root, label) is not None for label in ("已开启", "127.0.0.1", str(args.proxy_port)))
+            assert all(control(root, label) is not None for label in ("开启", "127.0.0.1", str(args.proxy_port)))
             device.screenshot(device.device_type, "proxy-after-restart")
             since = time.time()
             source_action(device, name)

@@ -261,20 +261,20 @@ def tv_highlight(device, root=None, screenshot=None):
         return labels
 
 
-def check_form(root, fields):
+def check_form(root, fields, footer=("保存", "取消")):
     nodes = [find(root, field) for field in fields]
-    actions = [find(root, label, "content-desc") for label in ("保存", "取消")]
+    actions = [find(root, label, "content-desc") for label in footer]
     if any(node is None for node in nodes + actions):
-        missing = [label for label, node in zip([*fields, "保存", "取消"], nodes + actions) if node is None]
+        missing = [label for label, node in zip([*fields, *footer], nodes + actions) if node is None]
         raise AssertionError(f"Form content clipped: {missing}")
-    save, cancel = map(bounds, actions)
+    action_bounds = list(map(bounds, actions))
     _, _, width, height = bounds(root.find("node"))
-    for left, top, right, bottom in (save, cancel):
+    for left, top, right, bottom in action_bounds:
         if not (0 <= left < right <= width and 0 <= top < bottom <= height):
             raise AssertionError("Form action is outside the screen")
         if bottom - top < (right - left) * 0.85:
             raise AssertionError("Form action is partially clipped")
-    if max(bounds(node)[3] for node in nodes) > min(save[1], cancel[1]):
+    if max(bounds(node)[3] for node in nodes) > min(top for _, top, _, _ in action_bounds):
         raise AssertionError("Form fields overlap the footer")
 
 
@@ -302,7 +302,9 @@ def verify_forms(device, mode):
         device.key("KEYCODE_DPAD_CENTER")
     else:
         device.click("HTTP 代理")
-    check_form(device.tree(), ("IP 地址", "端口", "用户名（可选）", "密码"))
+    root = device.tree()
+    check_form(root, ("IP 地址", "端口", "用户名（可选）", "密码"), footer=("关闭代理设置",))
+    assert find(root, "保存", "content-desc") is None, "The proxy dialog still shows Save"
     device.screenshot(mode, "proxy")
     device.key("KEYCODE_BACK")
     if device.device_type == "tv":

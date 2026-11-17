@@ -32,7 +32,7 @@ def verify_reset(device, apk, entry):
         device.choose_with_remote("HTTP 代理", limit=1)
     else:
         device.click("HTTP 代理")
-    assert control(device.tree(), "已关闭") is not None, "The App proxy is still enabled"
+    assert control(device.tree(), "关闭") is not None, "The App proxy is still enabled"
     close_panels(device)
     device.cleanup_hierarchy()
 

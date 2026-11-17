@@ -43,14 +43,13 @@
     <string name="favorite_remove">取消收藏</string>
     <string name="channel_number">%1$03d</string>
     <string name="proxy_title">HTTP 代理</string>
-    <string name="proxy_on">已开启</string>
-    <string name="proxy_off">已关闭</string>
+    <string name="proxy_on">开启</string>
+    <string name="proxy_off">关闭</string>
     <string name="proxy_ip">IP 地址</string>
     <string name="proxy_port">端口</string>
     <string name="proxy_username">用户名（可选）</string>
     <string name="proxy_password">密码</string>
-    <string name="proxy_save">保存</string>
-    <string name="proxy_cancel">取消</string>
+    <string name="proxy_close">关闭代理设置</string>
     <string name="proxy_invalid">IP 地址、端口或认证信息无效</string>
     <string name="proxy_read_error">无法读取代理设置</string>
     <string name="app_update_download_too_large">更新包超过 256 MiB 下载限制</string>
