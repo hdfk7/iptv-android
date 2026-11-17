@@ -117,7 +117,7 @@ M3U 文件头的 `x-tvg-url` 或 `url-tvg` 指向 XMLTV 节目表，优先通过
 
 | 仓库 | 默认列表 | 检查结果 |
 | --- | --- | --- |
-| [best-fan/iptv-sources](https://github.com/best-fan/iptv-sources) | [cn_all.m3u8](https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8) | 根目录 8 个 M3U8，近期每日自动提交；README 声明 MIT，未发现独立 LICENSE |
+| [best-fan/iptv-sources](https://github.com/best-fan/iptv-sources) | [cn_all.m3u8（上游代理）](https://gh.bravetimes.cn/https://raw.githubusercontent.com/best-fan/iptv-sources/master/cn_all.m3u8) | 根目录 8 个 M3U8，近期每日自动提交；README 声明 MIT，未发现独立 LICENSE |
 
 已通过 Git clone 检查，默认分支 main。部分 IPv6/运营商专用线路依赖相应网络。未来更新频率不保证。
 

@@ -42,7 +42,7 @@ class PlaylistRepository(
         restoreActiveSource: () -> Boolean = { false }
     ) : this(
         FileLibraryStore(directory),
-        { source -> FilePlaylistStore(directory, "playlist-${cacheKey(source.url)}.json") },
+        { source -> FilePlaylistStore(directory, "playlist-${cacheKey(LibraryRules.playlistCacheAddress(source))}.json") },
         downloader::download,
         System::currentTimeMillis,
         restoreActiveSource
@@ -214,7 +214,7 @@ class PlaylistRepository(
         }
         try {
             val stored = libraryStore.read()
-            val saved = stored ?: LibraryRules.defaults()
+            val saved = stored?.let(block = LibraryRules::withDefaultProxy) ?: LibraryRules.defaults()
             val savedSourceExists = saved.activeSourceId == SourceLibrary.FAVORITES_ID ||
                 saved.sources.any(predicate = { source -> source.id == saved.activeSourceId })
             library = if (restoreActiveSource() && savedSourceExists) {

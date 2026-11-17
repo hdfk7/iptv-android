@@ -10,7 +10,8 @@ import java.util.UUID
 
 object LibraryRules {
     private const val DOMESTIC_SOURCE_ID = "best-fan"
-    const val DEFAULT_URL = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
+    private const val DOMESTIC_DIRECT_URL = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
+    const val DEFAULT_URL = "https://gh.bravetimes.cn/https://raw.githubusercontent.com/best-fan/iptv-sources/master/cn_all.m3u8"
     internal const val DOMESTIC_GUIDE_URL = "http://epg.51zmt.top:8000/e.xml"
 
     fun defaults(): SourceLibrary {
@@ -22,6 +23,21 @@ object LibraryRules {
 
     fun isDomestic(source: PlaylistSource): Boolean {
         return source.id == DOMESTIC_SOURCE_ID && source.url == DEFAULT_URL
+    }
+
+    internal fun withDefaultProxy(library: SourceLibrary): SourceLibrary {
+        return library.copy(sources = library.sources.map(transform = { source ->
+            if (source.id == DOMESTIC_SOURCE_ID && source.url == DOMESTIC_DIRECT_URL) {
+                source.copy(url = DEFAULT_URL)
+            } else {
+                source
+            }
+        }))
+    }
+
+    internal fun playlistCacheAddress(source: PlaylistSource): String {
+        // Keep the built-in feed's existing cache key when its transport URL changes.
+        return if (isDomestic(source)) DOMESTIC_DIRECT_URL else source.url
     }
 
     fun restoreDefaults(library: SourceLibrary): SourceLibrary {

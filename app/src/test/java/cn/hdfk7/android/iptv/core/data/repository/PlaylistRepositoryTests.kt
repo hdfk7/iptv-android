@@ -69,6 +69,37 @@ class PlaylistRepositoryTests {
     })
 
     @Test
+    fun existingBuiltInSourceMovesToTheProxyAndKeepsItsCachedChannels(): Unit = runBlocking(block = {
+        val direct = "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8"
+        val proxy = "https://gh.bravetimes.cn/https://raw.githubusercontent.com/best-fan/iptv-sources/master/cn_all.m3u8"
+        val defaults = LibraryRules.defaults().sources.single()
+        val original = defaults.copy(url = direct, guideAddress = "https://example.org/guide.xml")
+        val custom = second.copy(url = "https://raw.githubusercontent.com/owner/repo/main/channels.m3u8")
+        val cached = Channel("Cached", "", listOf("https://example.org/live"))
+        val stores = mutableMapOf(direct to MemoryPlaylist().apply(block = {
+            write(PlaylistSnapshot(listOf(cached), 1L))
+        }))
+        val storage = MemoryLibrary(SourceLibrary(listOf(original, custom), original.id))
+        val requests = mutableListOf<String>()
+        val repository = PlaylistRepository(storage, { source ->
+            stores.getOrPut(key = LibraryRules.playlistCacheAddress(source), defaultValue = { MemoryPlaylist() })
+        }, { address ->
+            requests.add(address)
+            throw IOException("offline")
+        }, { 1000L })
+
+        assertEquals(proxy, defaults.url)
+        repository.initialize()
+        assertEquals(listOf(original.copy(url = proxy), custom), storage.value?.sources)
+        val visible = cached.copy(sourceId = original.id, sourceName = original.name,
+            guideRefs = listOf(GuideRef("https://example.org/guide.xml", "", cached.name)))
+        assertEquals(listOf(visible), repository.state.value.channels)
+        assertTrue(repository.refresh().failed)
+        assertEquals(listOf(proxy), requests)
+        assertEquals(listOf(visible), repository.state.value.channels)
+    })
+
+    @Test
     fun domesticTimingsDoNotLeakIntoFavoritesOrAnEditedSource(): Unit = runBlocking(block = {
         val domestic = LibraryRules.defaults().sources.first().copy(name = "我的直播")
         val storage = MemoryLibrary(SourceLibrary(listOf(domestic, second), domestic.id))
