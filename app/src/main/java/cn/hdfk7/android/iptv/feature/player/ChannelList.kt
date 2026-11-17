@@ -94,35 +94,37 @@ internal fun ChannelPanel(
     groupControls: @Composable () -> Unit
 ): Unit {
     val favorites = state.activeSourceId == SourceLibrary.FAVORITES_ID
-    val selectedIndex = remember(channels, state.selectedId, calculation = {
-        channels.indexOfFirst(predicate = { channel -> channel.id == state.selectedId })
+    val indices = remember(channels, calculation = {
+        buildMap(capacity = channels.size, builderAction = {
+            channels.forEachIndexed(action = { index, channel -> put(channel.id, index) })
+        })
     })
+    val selectedIndex = state.selectedId?.let(block = indices::get) ?: 0
     val listState = remember(state.activeSourceId, groupKey, selectedRowFocus, calculation = {
         selectedRowFocus.listStates.getOrPut(state.activeSourceId to groupKey, defaultValue = {
-            LazyListState(firstVisibleItemIndex = selectedIndex.coerceAtLeast(0))
+            LazyListState(firstVisibleItemIndex = selectedIndex)
         })
     })
     val scope = rememberCoroutineScope()
     var focusedChannelId by remember(calculation = { mutableStateOf<String?>(null) })
     var pendingFocusMove by remember(calculation = { mutableStateOf<Job?>(null) })
-    val reveal: suspend (Channel?) -> Unit = { target ->
-        if (target != null) {
-            val index = channels.indexOf(target)
-            if (index >= 0) {
-                listState.revealItem(index = index)
-                val requester = snapshotFlow(block = { selectedRowFocus.requesters[target.id] })
-                    .filterNotNull().first()
-                withFrameNanos(onFrame = { _ -> })
-                if (requester.requestFocus()) {
-                    focusedChannelId = target.id
-                }
-            }
+    val reveal: suspend (Int) -> Unit = { index ->
+        val targetId = channels[index].id
+        listState.revealItem(index = index)
+        val requester = snapshotFlow(block = { selectedRowFocus.requesters[targetId] })
+            .filterNotNull().first()
+        withFrameNanos(onFrame = { _ -> })
+        if (requester.requestFocus()) {
+            focusedChannelId = targetId
         }
     }
     LaunchedEffect(requestDrawerFocus, groupKey, channels.isNotEmpty(), selectedRowFocus.restoreRequest, block = {
         if (requestDrawerFocus && channels.isNotEmpty()) {
             val target = channelFocusTarget(channels, state.selectedId, selectedRowFocus.takeReturnTarget())
-            reveal(target)
+            val index = target?.id?.let(block = indices::get)
+            if (index != null) {
+                reveal(index)
+            }
         }
     })
     val shape = RoundedCornerShape(12.dp)
@@ -166,10 +168,7 @@ internal fun ChannelPanel(
                             Key.DirectionDown -> 1
                             else -> return@onPreviewKeyEvent false
                         }
-                        val focusedIndex = channels.indexOfFirst(predicate = { channel -> channel.id == focusedChannelId })
-                        if (focusedIndex < 0) {
-                            return@onPreviewKeyEvent false
-                        }
+                        val focusedIndex = focusedChannelId?.let(block = indices::get) ?: return@onPreviewKeyEvent false
                         val targetIndex = focusedIndex + step
                         val target = channels.getOrNull(targetIndex)
                         if (target == null) {
@@ -189,7 +188,7 @@ internal fun ChannelPanel(
                                 if (lastVisible != null && targetIndex == lastVisible.index + 1) {
                                     listState.scrollBy(value = (lastVisible.size + info.mainAxisItemSpacing).toFloat())
                                 }
-                                reveal(target)
+                                reveal(targetIndex)
                             })
                         }
                         true

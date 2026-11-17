@@ -36,7 +36,7 @@ import cn.hdfk7.android.iptv.core.data.network.ProxyHttpClient
 import cn.hdfk7.android.iptv.core.data.repository.LibraryRules
 import cn.hdfk7.android.iptv.core.data.repository.RefreshEngine
 import cn.hdfk7.android.iptv.core.model.Channel
-import cn.hdfk7.android.iptv.core.model.ChannelAggregation
+import cn.hdfk7.android.iptv.core.model.channelId
 import cn.hdfk7.android.iptv.core.model.LibraryException
 import cn.hdfk7.android.iptv.core.model.LineQuality
 import cn.hdfk7.android.iptv.core.model.RecentChannels
@@ -177,23 +177,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val source = catalog.library.sources.firstOrNull(predicate = { entry -> entry.id == catalog.library.activeSourceId })
                 val token = "${catalog.library.activeSourceId}:${source?.url.orEmpty()}"
                 val switched = catalog.loaded && catalogToken != null && catalogToken != token
-                val selectionRemoved = catalog.loaded && activeChannel != null &&
-                    catalog.channels.none(predicate = { channel -> channel.id == activeChannel?.id })
+                val playing = activeChannel
+                val current = playing?.let(block = { selected ->
+                    catalog.channels.firstOrNull(predicate = { channel -> channel.id == selected.id })
+                })
+                val selectionRemoved = catalog.loaded && playing != null && current == null
                 if (switched || selectionRemoved) {
                     resumePending = false
                     autoPlayPending = switched || wantsPlayback
                     clearSelection()
                 }
-                val playing = activeChannel
-                val current = catalog.channels.firstOrNull(predicate = { channel -> channel.id == playing?.id })
                 val refreshed = catalog.updatedAt != rankingSnapshot
                 if (refreshed) {
                     rankingSnapshot = catalog.updatedAt
                 }
-                if (playing != null && current != null) {
+                if (!switched && playing != null && current != null) {
                     activeChannel = playing.copy(name = current.name, sourceName = current.sourceName)
                     if (refreshed || playing.responseTimesMs != current.responseTimesMs ||
-                        playing.streams.toSet() != current.streams.toSet()) {
+                        (playing.streams != current.streams && playing.streams.toSet() != current.streams.toSet())) {
                         val playingUrl = playing.streams.getOrNull(streamIndex)
                         val candidates = candidateStreams(current)
                         activeChannel = current.copy(streams = candidates)
@@ -212,8 +213,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val snapshot = catalog.updatedAt
                 val favorites = catalog.library.favorites
                 if (favorites != previousFavorites) {
-                    favoriteIds = (favorites + ChannelAggregation.merge(favorites, SourceLibrary.FAVORITES_ID))
-                        .map(transform = { channel -> channel.id }).toSet()
+                    favoriteIds = buildSet(builderAction = {
+                        for (favorite in favorites) {
+                            add(favorite.id)
+                            add(channelId(SourceLibrary.FAVORITES_ID, favorite.key))
+                        }
+                    })
                     previousFavorites = favorites
                 }
                 mutableState.value = state.value.copy(

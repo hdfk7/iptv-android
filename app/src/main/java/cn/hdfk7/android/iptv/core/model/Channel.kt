@@ -11,7 +11,7 @@ data class Channel(
     val guideIds: List<String> = emptyList()
 ) {
     val key: String = ChannelNames.key(name)
-    val id: String = "$sourceId/$key"
+    val id: String = channelId(sourceId, key)
 
     fun streamsByResponseTime(): List<String> {
         if (responseTimesMs.isEmpty()) {
@@ -20,6 +20,8 @@ data class Channel(
         return streams.sortedBy(selector = { url -> responseTimesMs[url] ?: Int.MAX_VALUE })
     }
 }
+
+internal fun channelId(sourceId: String, channelKey: String): String = "$sourceId/$channelKey"
 
 data class PlaylistSnapshot(val channels: List<Channel>, val updatedAt: Long)
 
