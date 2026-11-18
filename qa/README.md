@@ -13,6 +13,8 @@
 
 ## 1. 用 ADB 卸载两台设备上的 IPTV
 
+如果用户明确要求测试设备上现有版本且不更新，跳过第 1～5 节的卸载、构建、上传和安装流程，直接执行第 6 节。先记录两端版本与安装包 SHA-256；不要为了满足升级流程覆盖用户指定的待测版本。安装与升级场景明确列为未执行，不能以功能回归代替升级验收。
+
 分别在手机和原 TV 模拟器执行 `adb -s <序列号> uninstall cn.hdfk7.android.iptv`，再用 `adb -s <序列号> shell pm list packages cn.hdfk7.android.iptv` 确认目标包已不存在。每一步完成后先报告实际结果，再进入下一步。
 
 ## 2. 用发布脚本打旧包
@@ -61,7 +63,35 @@ python -B qa/release_ui.py --device tv --serial $tv
 python -B qa/tv_navigation.py --serial $tv
 python -B qa/tv_exit.py --serial $tv
 python -B qa/controlled_ui.py --phase hls --device tv --serial $tv
+python -B qa/functional_ui.py --device phone --serial $phone
+python -B qa/functional_ui.py --device tv --serial $tv
+python -B qa/source_crud.py --device phone --serial $phone
+python -B qa/source_crud.py --device tv --serial $tv
+python -B qa/proxy_ui.py --device phone --serial $phone
+python -B qa/proxy_ui.py --device tv --serial $tv
+python -B qa/menu_ui.py --device phone --serial $phone
+python -B qa/menu_ui.py --device tv --serial $tv
+python -B qa/advanced_ui.py --device phone --serial $phone
+python -B qa/advanced_ui.py --device tv --serial $tv
+python -B qa/cache_ui.py --phone $phone --tv $tv
+python -B qa/tv_rendering.py --serial $tv
+python -B qa/update_ui.py --device phone --serial $phone
+python -B qa/update_ui.py --device tv --serial $tv
 ```
+
+`proxy-guide` 和 HLS 场景为每轮生成唯一订阅名与地址参数，避免重跑时触发重复地址校验。代理准备成功后保存本轮设备和订阅检查点，`after-restart` 与 `functional_ui.py` 从检查点找到本轮源；需复用其他测试源时显式传 `--source <名称>`。`functional_ui.py` 在 `proxy-guide` 准备好双频道测试源后执行；它检查换台出画、收藏往返、暂停恢复、重连、普通设置和最近观看。手机底栏自动隐藏后先重新展开再核验状态，TV 根据当前焦点选择方向，不能固定向左或向右寻找播放按钮。`source_crud.py` 为每次运行生成唯一临时订阅名，只删除该订阅；新增或编辑后通过滚动定位目标行，不把初始视口看不到新订阅判为保存失败。代理开启时使用默认的 `http://qa-iptv.test`，代理关闭时用 `--origin http://127.0.0.1:<测试源端口>`。夹具代理只接受专用测试域名，本地地址经该代理会返回 403。
+
+`update_ui.py` 检查版本信息、说明滚动和返回，若服务端提供下载则核验进度、手机外部点按不关闭、返回取消、重试与按钮取消；不打开安装器。若下载太快、失败或没有可下载版本，明确记录取消场景未执行，不以其他状态代替取消通过。
+
+`proxy_ui.py` 在夹具代理已开启后执行，检查输入框锁定、无效端口拦截、有效配置恢复及重开保留。手机横屏错误提示可能位于表单内层滚动区域，脚本需滚动到提示再断言，不能仅检查初始视口。自定义代理端口时传 `--proxy-port`。`menu_ui.py` 使用代理检查点中的双频道源，验证手机上一台/下一台、TV 上下键、手动上一条/下一条线路和 App 内音量按钮。音量只通过 App 控件修改，通过 ADB 只读核验并恢复原音量；TV 的 `cmd media_session` 无输出时读取 `dumpsys audio` 的音乐流。自定义源端口时传 `--origin-port`。
+
+`cache_ui.py` 在两端没有其他 UI 脚本运行时执行，先在两端准备缓存，再统一切到 503、并行检查频道和节目单保留、统一恢复，并验证播放列表及节目单地址的隔离。不要假设另一个播放列表中的最后一个频道在初始视口可见，也不要把按节目名称合法匹配的节目单判为串缓存；隔离场景应同时选用不匹配的节目单地址。`--resume-isolation` 只允许复用同一设备、同一 APK、相同订阅且已通过完整故障与恢复阶段的记录，并保留前一次失败记录。
+
+`tv_rendering.py` 只有在本轮同一设备、同一 APK SHA-256 的完整导航已通过时，才在两种渲染模式下执行设置、代理、更新、频道、节目单和返回等关键路径；没有匹配记录则两种模式都跑完整导航。`--full-navigation` 可强制重复全套。密码键盘受系统保护时，通过输入框类型及安全输入窗口的实际可见状态核验，截图返回空数据不得保存成有效截图或据此判定键盘未打开。
+
+用户要求保留测试资料时，系统 UI 清除测试数据后用 `cleanup.py --installed-only --keep-artifacts` 验证直接安装版本的收尾；有配对升级记录时不传 `--installed-only`。保留参数不会删除截图、日志和报告。
+
+本轮失败时，JSON 中只保存已通过的步骤；退出码非零必须与现场截图一起核查，不能把部分步骤列表当作整项通过。TV 输入框关闭键盘后仍应能用方向键到达确认按钮，不得用 Tab 或点按绕过遥控缺陷后宣告通过。
 
 | 场景 | 验收 |
 | --- | --- |

@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import cn.hdfk7.android.iptv.BuildConfig
+import cn.hdfk7.android.iptv.app.IptvApplication
 import cn.hdfk7.android.iptv.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -102,7 +103,7 @@ internal fun installedReleaseMessage(context: Context, release: AppRelease, prev
 fun AppUpdateDialog(onClose: () -> Unit): Unit {
     val context = LocalContext.current
     val store = remember(context, calculation = { AppUpdateStore(context.applicationContext) })
-    val address = BuildConfig.APP_UPDATE_MANIFEST_URL
+    val address = (context.applicationContext as IptvApplication).advancedSettings.current.updateManifestUrl
     val scope = rememberCoroutineScope()
     var checkAttempt by remember(calculation = { mutableIntStateOf(0) })
     var state by remember(calculation = { mutableStateOf<UpdateDialogState>(UpdateDialogState.Checking) })

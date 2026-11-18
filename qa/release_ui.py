@@ -170,8 +170,22 @@ class Device:
                     continue
             raise AssertionError("More did not open after reopening the playback controls")
 
+    def wait_for_player_control(self, label):
+        if self.device_type == "phone":
+            return self.player_control(label)
+        return self.wait_for(label, "content-desc")
+
     def menu(self, label):
         if self.device_type == "tv":
+            anchor = {"下一条线路": "上一条线路", "音量 ＋": "音量 −"}.get(label)
+            if anchor is not None:
+                for _ in range(12):
+                    focused = tv_highlight(self)
+                    if label in focused:
+                        self.key("KEYCODE_DPAD_CENTER")
+                        return
+                    self.key("KEYCODE_DPAD_RIGHT" if anchor in focused else "KEYCODE_DPAD_DOWN")
+                raise AssertionError(f"Menu entry is not reachable: {label}")
             self.choose_with_remote(label)
             return
         root = self.tree()
@@ -195,9 +209,17 @@ class Device:
         raise AssertionError(f"Control not reachable by remote: {label}")
 
     def screenshot(self, mode, name):
+        from PIL import Image
+
         OUTPUT.mkdir(parents=True, exist_ok=True)
         path = OUTPUT / f"{mode}-{name}.png"
-        path.write_bytes(self.adb("exec-out", "screencap", "-p"))
+        data = self.adb("exec-out", "screencap", "-p")
+        try:
+            with Image.open(io.BytesIO(data)) as frame:
+                frame.verify()
+        except (OSError, ValueError) as error:
+            raise AssertionError(f"Screenshot unavailable or invalid: {mode}/{name} ({len(data)} bytes)") from error
+        path.write_bytes(data)
         return path
 
 
@@ -261,7 +283,7 @@ def tv_highlight(device, root=None, screenshot=None):
         return labels
 
 
-def check_form(root, fields, footer=("保存", "取消")):
+def check_form(root, fields, footer=("保存", "取消"), minimum_footer_height=None):
     nodes = [find(root, field) for field in fields]
     actions = [find(root, label, "content-desc") for label in footer]
     if any(node is None for node in nodes + actions):
@@ -272,7 +294,8 @@ def check_form(root, fields, footer=("保存", "取消")):
     for left, top, right, bottom in action_bounds:
         if not (0 <= left < right <= width and 0 <= top < bottom <= height):
             raise AssertionError("Form action is outside the screen")
-        if bottom - top < (right - left) * 0.85:
+        minimum_height = minimum_footer_height if minimum_footer_height is not None else (right - left) * 0.85
+        if bottom - top < minimum_height:
             raise AssertionError("Form action is partially clipped")
     if max(bounds(node)[3] for node in nodes) > min(top for _, top, _, _ in action_bounds):
         raise AssertionError("Form fields overlap the footer")
@@ -287,7 +310,10 @@ def verify_forms(device, mode):
         device.choose_with_remote("添加源")
     else:
         device.click("添加源", "content-desc")
-    check_form(device.tree(), ("源名称", "播放列表地址", "XMLTV 地址（选填）"))
+    densities = re.findall(r"(?m)^(?:Physical|Override) density: (\d+)$", device.shell("wm", "density").replace("\r", ""))
+    minimum_height = round(44 * int(densities[-1]) / 160) if densities else None
+    check_form(device.tree(), ("源名称", "播放列表地址", "XMLTV 地址（选填）"),
+               minimum_footer_height=minimum_height)
     device.screenshot(mode, "add-source")
     if device.device_type == "tv":
         device.key("KEYCODE_BACK")
@@ -303,7 +329,12 @@ def verify_forms(device, mode):
     else:
         device.click("HTTP 代理")
     root = device.tree()
-    check_form(root, ("IP 地址", "端口", "用户名（可选）", "密码"), footer=("关闭代理设置",))
+    densities = re.findall(r"(?m)^(?:Physical|Override) density: (\d+)$", device.shell("wm", "density").replace("\r", ""))
+    minimum_height = round(44 * int(densities[-1]) / 160) if densities else None
+    check_form(
+        root, ("IP 地址", "端口", "用户名（可选）", "密码"), footer=("关闭代理设置",),
+        minimum_footer_height=minimum_height
+    )
     assert find(root, "保存", "content-desc") is None, "The proxy dialog still shows Save"
     device.screenshot(mode, "proxy")
     device.key("KEYCODE_BACK")

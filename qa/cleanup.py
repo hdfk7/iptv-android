@@ -20,6 +20,8 @@ def verify_reset(device, apk, entry):
     assert action_row(root, "国内精选", "正在使用") is not None, "Default subscription is not active"
     favorite = find(root, "收藏")
     zero = find(root, "0")
+    if zero is None:
+        zero = find(root, "0 个频道")
     assert favorite is not None and zero is not None, "Favorites are not empty"
     left, top, _, _ = bounds(favorite)
     assert abs(bounds(zero)[0] - left) < 35 and 0 < bounds(zero)[1] - top < 130
@@ -32,7 +34,7 @@ def verify_reset(device, apk, entry):
         device.choose_with_remote("HTTP 代理", limit=1)
     else:
         device.click("HTTP 代理")
-    assert control(device.tree(), "关闭") is not None, "The App proxy is still enabled"
+    assert find(device.tree(), "关闭", "content-desc") is not None, "The App proxy is still enabled"
     close_panels(device)
     device.cleanup_hierarchy()
 
@@ -53,27 +55,36 @@ def main():
     parser.add_argument("--phone", required=True)
     parser.add_argument("--tv", required=True)
     parser.add_argument("--new-apk", type=Path)
+    parser.add_argument("--installed-only", action="store_true", help="Verify a direct installed-version run without an upgrade checkpoint")
+    parser.add_argument("--keep-artifacts", action="store_true", help="Retain screenshots, logs and reports")
     args = parser.parse_args()
     if args.phone == args.tv:
         parser.error("Select two different devices")
     run = QA_OUTPUT.resolve()
-    checkpoint = run / "local-upgrade" / "paired-run.json"
-    state = json.loads(checkpoint.read_text(encoding="utf-8"))
-    if not all(state["devices"][kind].get("passed") for kind in ("phone", "tv")):
-        parser.error("Complete both device upgrades before cleanup")
-    identity = state["identity"]
-    if (args.phone, args.tv) != (identity["phone"], identity["tv"]):
-        parser.error("This device pair does not match the run")
+    if args.installed_only:
+        entry, artifact = release_artifact()
+        identity = {"to": entry}
+    else:
+        checkpoint = run / "local-upgrade" / "paired-run.json"
+        state = json.loads(checkpoint.read_text(encoding="utf-8"))
+        if not all(state["devices"][kind].get("passed") for kind in ("phone", "tv")):
+            parser.error("Complete both device upgrades before cleanup")
+        identity = state["identity"]
+        if (args.phone, args.tv) != (identity["phone"], identity["tv"]):
+            parser.error("This device pair does not match the run")
     apk = (args.new_apk or release_artifact()[1]).resolve()
     if apk.is_relative_to(run):
         parser.error("Keep the current APK outside the temporary QA directory")
-    if hashlib.sha256(apk.read_bytes()).hexdigest() != identity["candidateSha256"]:
+    if not args.installed_only and hashlib.sha256(apk.read_bytes()).hexdigest() != identity["candidateSha256"]:
         parser.error("The APK does not match the candidate recorded for this run")
     for serial, kind in ((args.phone, "phone"), (args.tv, "tv")):
         verify_reset(Device(serial, kind), apk, identity["to"])
         print(f"{kind}: latest package retained and fresh App state verified", flush=True)
-    remove_run_files(run)
-    print("Host run files removed", flush=True)
+    if args.keep_artifacts:
+        print("Host screenshots, logs and reports retained", flush=True)
+    else:
+        remove_run_files(run)
+        print("Host run files removed", flush=True)
 
 
 if __name__ == "__main__":

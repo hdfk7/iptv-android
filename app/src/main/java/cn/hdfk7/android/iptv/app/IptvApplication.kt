@@ -8,6 +8,7 @@ import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.feature.update.AppUpdateStore
 import cn.hdfk7.android.iptv.feature.update.installedReleaseMessage
 import kotlin.concurrent.thread
+import cn.hdfk7.android.iptv.core.data.local.AdvancedSettingsStore
 import cn.hdfk7.android.iptv.core.data.local.ProxySettingsStore
 import cn.hdfk7.android.iptv.core.data.network.PlaylistDownloader
 import cn.hdfk7.android.iptv.core.data.repository.PlaylistRepository
@@ -31,6 +32,7 @@ class IptvApplication : Application() {
     }
 
     internal val viewingPreferences by lazy(initializer = { getSharedPreferences("viewing", MODE_PRIVATE) })
+    internal val advancedSettings by lazy(initializer = { AdvancedSettingsStore(this) })
     val proxySettings by lazy(initializer = { ProxySettingsStore(this) })
     internal val downloader by lazy(initializer = { PlaylistDownloader(settings = { checkNotNull(proxySettings.current) }) })
     val playlistRepository: PlaylistRepository by lazy(initializer = {

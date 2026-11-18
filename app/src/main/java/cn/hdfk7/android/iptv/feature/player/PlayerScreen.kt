@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -27,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
@@ -123,6 +125,10 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
                             settingsMenuEntry = SettingsPage.Update
                             showSettings(SettingsPage.Update)
                         },
+                        onAdvanced = {
+                            settingsMenuEntry = SettingsPage.Advanced
+                            showSettings(SettingsPage.Advanced)
+                        },
                         television = television,
                         entry = settingsMenuEntry
                     )
@@ -133,21 +139,25 @@ fun PlayerScreen(viewModel: PlayerViewModel, sourceViewModel: SourceManagerViewM
                 SettingsPage.Update -> {
                     AppUpdateDialog(onClose = { showSettings(SettingsPage.Menu) })
                 }
+                SettingsPage.Advanced -> {
+                    AdvancedSettingsDialog(store = app.advancedSettings, television = television, onClose = { showSettings(SettingsPage.Menu) })
+                }
                 null -> Unit
             }
         }
     )
 }
 
-private enum class SettingsPage { Menu, Proxy, Update }
+private enum class SettingsPage { Menu, Proxy, Update, Advanced }
 
-private enum class SettingsControl { Close, Proxy, Update, Startup, FillVideo, RenderingCompatibility }
+private enum class SettingsControl { Close, Proxy, Update, Startup, FillVideo, RenderingCompatibility, Advanced }
 
 @Composable
 private fun HomeSettingsDialog(
     onClose: () -> Unit,
     onProxy: () -> Unit,
     onUpdate: () -> Unit,
+    onAdvanced: () -> Unit,
     resumeEnabled: Boolean,
     onToggleResume: () -> Unit,
     fillVideoScreen: Boolean,
@@ -157,11 +167,23 @@ private fun HomeSettingsDialog(
     entry: SettingsPage
 ): Unit {
     var selection by remember(entry, calculation = {
-        mutableStateOf(if (entry == SettingsPage.Update) SettingsControl.Update else SettingsControl.Proxy)
+        mutableStateOf(when (entry) {
+            SettingsPage.Update -> SettingsControl.Update
+            SettingsPage.Advanced -> SettingsControl.Advanced
+            else -> SettingsControl.Proxy
+        })
     })
-    SettingsMenuContainer(television = television, onClose = onClose, content = {
+    val configuration = LocalConfiguration.current
+    val twoColumns = !television && configuration.screenWidthDp >= 580 && configuration.screenHeightDp < 420
+    val width = when {
+        twoColumns -> 560.dp
+        television -> 440.dp
+        else -> 380.dp
+    }
+    SettingsMenuContainer(television = television, onClose = onClose, width = width, content = {
         val navigation = tvPanelNavigation(television, onMove = { _, vertical ->
-            selection = SettingsControl.entries[(selection.ordinal + vertical).coerceIn(0, SettingsControl.entries.lastIndex)]
+            val lastControl = if (television) SettingsControl.Advanced else SettingsControl.FillVideo
+            selection = SettingsControl.entries[(selection.ordinal + vertical).coerceIn(0, lastControl.ordinal)]
         }, onConfirm = {
             when (selection) {
                 SettingsControl.Close -> onClose()
@@ -170,6 +192,7 @@ private fun HomeSettingsDialog(
                 SettingsControl.Startup -> onToggleResume()
                 SettingsControl.FillVideo -> onToggleFillVideoScreen()
                 SettingsControl.RenderingCompatibility -> onToggleRenderingCompatibility()
+                SettingsControl.Advanced -> onAdvanced()
             }
         })
         fun highlighted(control: SettingsControl): Boolean? {
@@ -181,7 +204,7 @@ private fun HomeSettingsDialog(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     content = {
                         DialogTitle(text = stringResource(R.string.settings_title), modifier = Modifier.weight(1f))
@@ -199,45 +222,64 @@ private fun HomeSettingsDialog(
                     modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     content = {
-                        SettingsGroup(content = {
-                            SettingsEntry(
-                                icon = R.drawable.ic_settings,
-                                title = stringResource(R.string.proxy_title),
-                                onClick = onProxy,
-                                highlighted = highlighted(SettingsControl.Proxy)
-                            )
-                            SettingsEntry(
-                                icon = R.drawable.ic_update,
-                                title = stringResource(R.string.app_update_title),
-                                onClick = onUpdate,
-                                highlighted = highlighted(SettingsControl.Update)
-                            )
-                        })
-                        SettingsGroup(content = {
-                            SettingsEntry(
-                                icon = R.drawable.ic_play,
-                                title = stringResource(R.string.startup_channel),
-                                value = stringResource(if (resumeEnabled) R.string.startup_channel_last else R.string.startup_channel_first),
-                                onClick = onToggleResume,
-                                highlighted = highlighted(SettingsControl.Startup)
-                            )
-                            SettingsEntry(
-                                icon = R.drawable.ic_fullscreen,
-                                title = stringResource(R.string.fill_video_screen),
-                                checked = fillVideoScreen,
-                                onClick = onToggleFillVideoScreen,
-                                highlighted = highlighted(SettingsControl.FillVideo)
-                            )
-                            if (television) {
+                        val services: @Composable () -> Unit = {
+                            SettingsGroup(content = {
                                 SettingsEntry(
                                     icon = R.drawable.ic_settings,
-                                    title = stringResource(R.string.tv_rendering_compatibility),
-                                    checked = LocalTvRenderingCompatibility.current,
-                                    onClick = onToggleRenderingCompatibility,
-                                    highlighted = highlighted(SettingsControl.RenderingCompatibility)
+                                    title = stringResource(R.string.proxy_title),
+                                    onClick = onProxy,
+                                    highlighted = highlighted(SettingsControl.Proxy)
                                 )
-                            }
-                        })
+                                SettingsEntry(
+                                    icon = R.drawable.ic_update,
+                                    title = stringResource(R.string.app_update_title),
+                                    onClick = onUpdate,
+                                    highlighted = highlighted(SettingsControl.Update)
+                                )
+                            })
+                        }
+                        val playback: @Composable () -> Unit = {
+                            SettingsGroup(content = {
+                                SettingsEntry(
+                                    icon = R.drawable.ic_play,
+                                    title = stringResource(R.string.startup_channel),
+                                    value = stringResource(if (resumeEnabled) R.string.startup_channel_last else R.string.startup_channel_first),
+                                    onClick = onToggleResume,
+                                    highlighted = highlighted(SettingsControl.Startup)
+                                )
+                                SettingsEntry(
+                                    icon = R.drawable.ic_fullscreen,
+                                    title = stringResource(R.string.fill_video_screen),
+                                    checked = fillVideoScreen,
+                                    onClick = onToggleFillVideoScreen,
+                                    highlighted = highlighted(SettingsControl.FillVideo)
+                                )
+                                if (television) {
+                                    SettingsEntry(
+                                        icon = R.drawable.ic_settings,
+                                        title = stringResource(R.string.tv_rendering_compatibility),
+                                        checked = LocalTvRenderingCompatibility.current,
+                                        onClick = onToggleRenderingCompatibility,
+                                        highlighted = highlighted(SettingsControl.RenderingCompatibility)
+                                    )
+                                }
+                                SettingsEntry(
+                                    icon = R.drawable.ic_settings,
+                                    title = stringResource(R.string.advanced_title),
+                                    onClick = onAdvanced,
+                                    highlighted = highlighted(SettingsControl.Advanced)
+                                )
+                            })
+                        }
+                        if (twoColumns) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
+                                Box(modifier = Modifier.weight(1f), content = { services() })
+                                Box(modifier = Modifier.weight(1f), content = { playback() })
+                            })
+                        } else {
+                            services()
+                            playback()
+                        }
                     }
                 )
             }
@@ -246,7 +288,12 @@ private fun HomeSettingsDialog(
 }
 
 @Composable
-private fun SettingsMenuContainer(television: Boolean, onClose: () -> Unit, content: @Composable () -> Unit): Unit {
+internal fun SettingsMenuContainer(
+    television: Boolean,
+    onClose: () -> Unit,
+    width: Dp = if (television) 440.dp else 380.dp,
+    content: @Composable () -> Unit
+): Unit {
     Dialog(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = !television),
@@ -257,14 +304,14 @@ private fun SettingsMenuContainer(television: Boolean, onClose: () -> Unit, cont
                 Modifier.fillMaxWidth()
             }
             Box(modifier = viewport.padding(horizontal = 16.dp), contentAlignment = Alignment.Center, content = {
-                Box(modifier = Modifier.width(if (television) 440.dp else 380.dp), content = { content() })
+                Box(modifier = Modifier.width(width), content = { content() })
             })
         }
     )
 }
 
 @Composable
-private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit): Unit {
+internal fun SettingsGroup(content: @Composable ColumnScope.() -> Unit): Unit {
     Column(
         modifier = Modifier.fillMaxWidth().background(BackdropBottom, RoundedCornerShape(14.dp)).padding(4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),

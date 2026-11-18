@@ -49,8 +49,12 @@ def snapshot(device, stage, url):
     favorite = find(root, "收藏")
     assert favorite is not None, "Favorites row is missing"
     x, y, _, _ = bounds(favorite)
-    counts = [node.get("text") for node in root.iter("node") if node.get("text", "").isdecimal()
-              and abs(bounds(node)[0] - x) < 35 and 0 < bounds(node)[1] - y < 130]
+    counts = [
+        match.group(1)
+        for node in root.iter("node")
+        if (match := re.fullmatch(r"(\d+)(?: 个频道)?", node.get("text", "")))
+        and abs(bounds(node)[0] - x) < 35 and 0 < bounds(node)[1] - y < 130
+    ]
     assert counts and int(counts[0]) > 0, "Nonempty favorites are required"
 
     # Visit the seeded source through its normal entry, even if the launcher selected another source.

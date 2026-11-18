@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import cn.hdfk7.android.iptv.BuildConfig
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -65,7 +64,7 @@ internal fun PlaybackVideo(viewModel: PlayerViewModel): Unit {
             } while (SystemClock.elapsedRealtime() < deadline)
             viewModel.finishPreviewFrame(request, frame = null)
         } finally {
-            if (BuildConfig.APP_DEBUG_SWITCH) {
+            if (viewModel.debugPlayback) {
                 Log.d("IptvPlayback", "preview_copies=$copies preview_ms=" +
                     (SystemClock.elapsedRealtime() - startedAt) + " standby=" + request.standby + " preview_tune_id=" + request.tuneId)
             }

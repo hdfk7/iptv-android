@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalConfiguration
@@ -28,13 +29,17 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
@@ -48,7 +53,7 @@ import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.FormFieldSpacing
 import cn.hdfk7.android.iptv.core.ui.components.FormFieldWidth
 import cn.hdfk7.android.iptv.core.ui.components.FormTwoColumnWidth
-import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
+import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.tvTextFieldColors
 import cn.hdfk7.android.iptv.core.ui.components.tvPanelNavigation
 import kotlinx.coroutines.CancellationException
@@ -263,15 +268,17 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         fun keyboardOptions(type: KeyboardType = KeyboardType.Text): KeyboardOptions {
             return KeyboardOptions(keyboardType = type, imeAction = ImeAction.Done, showKeyboardOnFocus = false)
         }
-        val powerStatus = if (proxyEnabled) R.string.proxy_on else R.string.proxy_off
         val power: @Composable () -> Unit = {
-            TvIconButton(
-                description = stringResource(powerStatus),
-                icon = R.drawable.ic_power,
-                selected = proxyEnabled,
+            val status = stringResource(if (proxyEnabled) R.string.proxy_on else R.string.proxy_off)
+            TvAction(
                 onClick = toggle,
-                modifier = buttonModifier(ProxyControl.Power),
-                focusHighlight = highlighted(ProxyControl.Power)
+                modifier = buttonModifier(ProxyControl.Power).semantics(properties = {
+                    contentDescription = status
+                    role = Role.Switch
+                    toggleableState = ToggleableState(proxyEnabled)
+                }),
+                focusHighlight = highlighted(ProxyControl.Power),
+                content = { Switch(checked = proxyEnabled, onCheckedChange = null) }
             )
         }
         val hostField: @Composable (Modifier) -> Unit = { modifier ->
@@ -303,40 +310,41 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
         Box(
             modifier = (if (television) Modifier.fillMaxSize() else Modifier)
                 .windowInsetsPadding(WindowInsets.safeDrawing).imePadding(),
-            contentAlignment = if (television) Alignment.TopCenter else Alignment.Center,
+            contentAlignment = if (television && imeVisible) Alignment.TopCenter else Alignment.Center,
             content = {
                 val panelHeight = if (television) {
-                    Modifier.padding(12.dp).heightIn(max = 480.dp)
+                    Modifier.padding(16.dp).heightIn(max = 480.dp)
                 } else {
-                    val baseHeight = if (twoColumns) 260.dp else 400.dp
+                    val baseHeight = if (twoColumns) 298.dp else 400.dp
                     val errorSpace = when {
                         configuration.orientation != Configuration.ORIENTATION_PORTRAIT -> 0.dp
                         configuration.screenWidthDp.dp < FormFieldWidth + 56.dp -> 80.dp
                         else -> 56.dp
                     }
-                    Modifier.verticalScroll(rememberScrollState()).padding(12.dp)
+                    Modifier.verticalScroll(rememberScrollState()).padding(16.dp)
                         .height(baseHeight + errorSpace)
                 }
-                val innerPadding = if (television) 14.dp else 16.dp
+                val innerPadding = 16.dp
                 val fieldsWidth = if (twoColumns) FormTwoColumnWidth else FormFieldWidth
+                val panelWidth = if (television) 560.dp else fieldsWidth + innerPadding * 2
+                val fieldsSurface = Modifier.fillMaxWidth().background(BackdropBottom, RoundedCornerShape(14.dp)).padding(8.dp)
                 Column(
-                    modifier = panelHeight.width(fieldsWidth + innerPadding * 2).then(navigation)
+                    modifier = panelHeight.width(panelWidth).then(navigation)
                         .background(DialogSurface, RoundedCornerShape(22.dp)).padding(innerPadding),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (television) 12.dp else 8.dp),
                     content = {
                         Row(verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
                                 DialogTitle(text = stringResource(R.string.proxy_title), modifier = Modifier.weight(1f))
-                                Text(text = stringResource(powerStatus), color = Accent, fontSize = 16.sp)
                                 power()
                             })
                         Column(
-                            modifier = Modifier.weight(1f, fill = false).verticalScroll(scroll),
+                            modifier = Modifier.weight(1f, fill = false).then(fieldsSurface).verticalScroll(scroll),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             content = {
                                 if (twoColumns) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
-                                        hostField(Modifier.weight(1f))
+                                        hostField(Modifier.weight(2f))
                                         portField(Modifier.weight(1f))
                                     })
                                     Row(horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
@@ -354,9 +362,16 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                                 }
                             }
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
-                            TvIconButton(description = stringResource(R.string.proxy_close), icon = R.drawable.ic_close, onClick = close,
-                                modifier = buttonModifier(ProxyControl.Close), focusHighlight = highlighted(ProxyControl.Close))
+                        val closeLabel = stringResource(R.string.proxy_close)
+                        val closeModifier = buttonModifier(ProxyControl.Close)
+                        val closeHighlight = highlighted(ProxyControl.Close)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, content = {
+                            TvAction(
+                                onClick = close,
+                                modifier = closeModifier.semantics(properties = { contentDescription = closeLabel }),
+                                focusHighlight = closeHighlight,
+                                content = { Text(text = stringResource(R.string.app_update_close_short)) }
+                            )
                         })
                     }
                 )

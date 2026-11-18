@@ -26,7 +26,6 @@ import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
-import cn.hdfk7.android.iptv.BuildConfig
 import cn.hdfk7.android.iptv.R
 import cn.hdfk7.android.iptv.app.IptvApplication
 import cn.hdfk7.android.iptv.core.data.local.GuideCache
@@ -54,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.json.JSONArray
+import java.util.concurrent.TimeUnit
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -62,6 +62,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private val app = application as IptvApplication
+    internal val debugPlayback: Boolean get() = app.advancedSettings.current.debugPlayback
     private val repository = app.playlistRepository
     private val audio = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val mutableState = MutableStateFlow(PlayerState(fixedVolume = audio.isVolumeFixed))
@@ -415,7 +416,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (state.value.message == R.string.proxy_read_error) {
             mutableState.value = state.value.copy(message = null)
         }
-        val client = ProxyHttpClient.create(settings, BuildConfig.STREAM_CONNECT_TIMEOUT_MS, BuildConfig.STREAM_READ_TIMEOUT_MS)
+        val initialConfig = app.advancedSettings.current
+        val client = ProxyHttpClient.create(settings, initialConfig.connectTimeoutMs, initialConfig.readTimeoutMs)
+            .newBuilder()
+            .addInterceptor(interceptor = { chain ->
+                val config = app.advancedSettings.current
+                chain.withConnectTimeout(config.connectTimeoutMs, TimeUnit.MILLISECONDS)
+                    .withReadTimeout(config.readTimeoutMs, TimeUnit.MILLISECONDS)
+                    .proceed(chain.request())
+            })
+            .build()
         httpClient = client
         val http = OkHttpDataSource.Factory(client)
         val loadPolicy = object : DefaultLoadErrorHandlingPolicy() {
@@ -475,7 +485,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     return
                 }
                 publishPlaybackStatus(created, active)
-                if (BuildConfig.APP_DEBUG_SWITCH) {
+                if (debugPlayback) {
                     val tracksMs = active.tracksAt?.let(block = { time -> time - active.startedAt }) ?: -1
                     val readyMs = active.readyAt?.let(block = { time -> time - active.startedAt }) ?: -1
                     Log.d("IptvPlayback", "first_frame_ms=${(now - active.startedAt).coerceAtLeast(1L)} " +
@@ -566,7 +576,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         wantsPlayback = playing
         if (playing) {
             previewing = false
-            if (BuildConfig.APP_DEBUG_SWITCH) {
+            if (debugPlayback) {
                 Log.d("IptvPlayback", "tune_start_id=$generation")
             }
         }
@@ -707,7 +717,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 previewFrameVisible = false, line = 0, lineCount = limit,
                 playbackFailureMessage = lineFailures.distinct().singleOrNull()?.message ?: R.string.stream_error,
                 failedLineMessages = lineFailures.map(transform = PlaybackFailure::message))
-            if (BuildConfig.APP_DEBUG_SWITCH) {
+            if (debugPlayback) {
                 Log.d("IptvPlayback", "tune_failed_id=$generation lines_tried=" +
                     attemptedLines.size + " causes=" + lineFailures.joinToString(","))
             }
@@ -777,7 +787,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         val channel = activeChannel ?: return
         val url = channel.streams[streamIndex]
-        if (BuildConfig.APP_DEBUG_SWITCH) {
+        if (debugPlayback) {
             val current = player
             val active = attempt
             val counters = current?.videoDecoderCounters
@@ -811,7 +821,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun watchLineHealth(current: ExoPlayer, active: PlaybackAttempt): Unit {
-        val limit = BuildConfig.STREAM_PROBE_TIMEOUT_MS.toLong()
+        val limit = app.advancedSettings.current.lineTimeoutMs.toLong()
         val channel = activeChannel ?: return
         timeout = viewModelScope.launch(block = {
             val health = PlaybackHealth(active, limit)

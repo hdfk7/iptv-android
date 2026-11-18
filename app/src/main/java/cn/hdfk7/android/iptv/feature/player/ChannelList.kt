@@ -129,15 +129,18 @@ internal fun ChannelPanel(
     })
     val shape = RoundedCornerShape(12.dp)
     val panel = Modifier.background(Brush.horizontalGradient(listOf(
-        BackdropBottom.copy(alpha = 0.80f), BackdropBottom.copy(alpha = 0.64f)
+        BackdropBottom.copy(alpha = 0.90f), BackdropBottom.copy(alpha = 0.72f)
     )))
     Column(
         modifier = modifier.clip(shape).then(panel).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         content = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
-                    Text(text = stringResource(R.string.tv_channels), color = Accent, fontSize = 12.sp)
+                Column(
+                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp), content = {
+                    Text(text = stringResource(R.string.tv_channels), color = Accent,
+                        fontSize = if (television) 18.sp else 16.sp, fontWeight = FontWeight.SemiBold)
                     val source = state.sources.firstOrNull(predicate = { entry -> entry.id == state.activeSourceId })
                     Text(text = source?.name ?: stringResource(R.string.favorites), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 })
@@ -282,7 +285,7 @@ private fun ChannelRow(
     val hasPreview = preview != null
     val rowHeight = if (hasPreview) Modifier.heightIn(min = 72.dp) else Modifier.height(40.dp)
     val rowModifier = Modifier.fillMaxWidth().then(rowHeight)
-        .tvFocusBackground(focused = highlighted, selected = selected, borderColor = Accent)
+        .tvFocusBackground(focused = highlighted, selected = selected, borderColor = FocusBorder)
         .focusRequester(channelFocus)
         .onPreviewKeyEvent(onPreviewKeyEvent = { event ->
             if (event.key == Key.DirectionRight) {

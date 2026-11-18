@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -27,6 +26,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
@@ -38,7 +38,9 @@ import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 import cn.hdfk7.android.iptv.core.ui.components.tvFocusBackground
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
-import cn.hdfk7.android.iptv.core.ui.theme.CinemaMenuSurface
+import cn.hdfk7.android.iptv.core.ui.theme.BackdropBottom
+import cn.hdfk7.android.iptv.core.ui.theme.DialogSurface
+import cn.hdfk7.android.iptv.core.ui.theme.FocusBorder
 import cn.hdfk7.android.iptv.core.ui.theme.Muted
 import java.time.Instant
 import java.time.ZoneId
@@ -110,15 +112,15 @@ internal fun ProgrammeScheduleDialog(
             }
         })
         Column(
-            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp)
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp)
                 .width(560.dp).heightIn(max = 480.dp).then(navigation)
-                .background(CinemaMenuSurface, RoundedCornerShape(22.dp))
+                .background(DialogSurface, RoundedCornerShape(22.dp))
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             content = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
                     DialogTitle(text = stringResource(R.string.guide_title, channelName),
-                        modifier = Modifier.weight(1f).padding(start = rowPadding))
+                        modifier = Modifier.weight(1f))
                     val closeNavigation = if (television) {
                         Modifier.focusProperties(scope = { canFocus = false })
                             .semantics(properties = { selected = focusedIndex == -1 })
@@ -129,9 +131,13 @@ internal fun ProgrammeScheduleDialog(
                         modifier = closeNavigation, focusHighlight = if (television) focusedIndex == -1 else null)
                 })
                 if (programmes.isEmpty()) {
-                    Text(text = stringResource(R.string.guide_empty), color = Muted)
+                    Text(text = stringResource(R.string.guide_empty), color = Muted, modifier = Modifier.padding(rowPadding))
                 } else {
-                    LazyColumn(state = list, modifier = Modifier.weight(1f, fill = false),
+                    LazyColumn(
+                        state = list,
+                        modifier = Modifier.weight(1f, fill = false).fillMaxWidth()
+                            .background(BackdropBottom, RoundedCornerShape(14.dp)),
+                        contentPadding = PaddingValues(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp), content = {
                             itemsIndexed(items = programmes, itemContent = { index, item ->
                                 val current = index == currentIndex
@@ -144,15 +150,16 @@ internal fun ProgrammeScheduleDialog(
                                     modifier = Modifier.fillMaxWidth().tvFocusBackground(
                                         focused = { television && focusedIndex == index },
                                         selected = { current },
-                                        borderColor = Accent
+                                        borderColor = FocusBorder
                                     ).then(focusSemantics).padding(rowPadding),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     content = {
-                                        Text(text = timeFormat.format(Instant.ofEpochMilli(item.startsAt)), color = Color.White,
+                                        Text(text = timeFormat.format(Instant.ofEpochMilli(item.startsAt)), color = Muted,
                                             modifier = Modifier.alignByBaseline().widthIn(min = 44.dp),
                                             style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum"), maxLines = 1)
                                         Text(text = if (current) stringResource(R.string.programme_current, item.title) else item.title,
-                                            color = Color.White, modifier = Modifier.weight(1f).alignByBaseline(),
+                                            color = Accent, modifier = Modifier.weight(1f).alignByBaseline(),
+                                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
                                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 )

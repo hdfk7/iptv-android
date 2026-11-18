@@ -9,7 +9,7 @@ from urllib.request import urlopen
 
 from PIL import Image, ImageChops
 
-from release_ui import Device, bounds, find, tv_highlight, verify_release_apk
+from release_ui import Device, QA_OUTPUT, bounds, find, tv_highlight, verify_release_apk
 from upgrade_seed import (add_source, close_keyboard, close_panels, control, open_app,
                           open_channels, source_action, type_in_field)
 
@@ -30,9 +30,10 @@ def wait_for_requests(url, paths, since, timeout=45):
 
 
 def verify_hls(device, origin_port):
-    name = "IPTV-QA-HLS"
+    run = str(time.time_ns())
+    name = "IPTV-QA-HLS-" + run
     origin = f"http://127.0.0.1:{origin_port}"
-    add_source(device, name, origin + "/debug-smoke.m3u", origin + "/guide-data.xml")
+    add_source(device, name, origin + "/debug-smoke.m3u?run=" + run, origin + "/guide-data.xml")
     source_action(device, name)
     for _ in range(6):
         open_channels(device)
@@ -76,7 +77,7 @@ def open_proxy(device):
 def enable_proxy(device, port):
     open_proxy(device)
     root = device.tree()
-    assert control(root, "关闭") is not None, "Start this test with the App proxy disabled"
+    assert find(root, "关闭", "content-desc") is not None, "Start this test with the App proxy disabled"
     television = device.device_type == "tv"
     for label, value, direction in (("IP 地址", "127.0.0.1", "DOWN"), ("端口", str(port), "RIGHT")):
         if television:
@@ -93,9 +94,9 @@ def enable_proxy(device, port):
     close_panels(device)
 
 
-def proxy_playlist(device, origin_port, guide_url, since):
+def proxy_playlist(device, origin_port, guide_url, since, playlist=None):
     host = "http://qa-iptv.test"
-    playlist = f"/release.m3u?device={device.device_type}"
+    playlist = (playlist or f"{host}/release.m3u?device={device.device_type}").removeprefix(host)
     wait_for_requests(f"http://127.0.0.1:{origin_port}/events",
                       [host + playlist, playlist], since)
     wait_for_requests(f"http://127.0.0.1:{origin_port}/events",
@@ -193,21 +194,33 @@ def main():
     if args.phase == "after-restart" and not args.old_pid:
         parser.error("--old-pid is required to verify a cold restart")
     device = Device(args.serial, args.device)
-    verify_release_apk(device)
+    entry, checksum = verify_release_apk(device)
     open_app(device)
     if args.phase == "hls":
         verify_hls(device, args.origin_port)
     else:
-        name = "IPTV-QA-Proxy"
+        checkpoint = QA_OUTPUT / "controlled" / (args.device + "-proxy-source.json")
+        if args.phase == "proxy-guide":
+            run = str(time.time_ns())
+        else:
+            prior = json.loads(checkpoint.read_text(encoding="utf-8"))
+            assert prior["serial"] == args.serial, "Proxy source checkpoint belongs to another device"
+            assert prior["originPort"] == args.origin_port and prior["proxyPort"] == args.proxy_port
+            run = prior["run"]
+        name = "IPTV-QA-Proxy-" + run
         guide = guide_address(device)
-        playlist = f"http://qa-iptv.test/release.m3u?device={args.device}"
+        playlist = f"http://qa-iptv.test/release.m3u?device={args.device}&run={run}"
         if args.phase == "proxy-guide":
             enable_proxy(device, args.proxy_port)
             add_source(device, name, playlist, guide)
             since = time.time()
             source_action(device, name)
-            proxy_playlist(device, args.origin_port, guide, since)
+            proxy_playlist(device, args.origin_port, guide, since, playlist=playlist)
             verify_midnight(device)
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            checkpoint.write_text(json.dumps({"serial": args.serial, "run": run, "name": name,
+                                             "playlist": playlist, "originPort": args.origin_port,
+                                             "proxyPort": args.proxy_port}), encoding="utf-8")
             print("Record this PID before closing the App from the system UI:",
                   device.shell("pidof", "cn.hdfk7.android.iptv").strip())
         else:
@@ -223,6 +236,11 @@ def main():
             device.menu("刷新频道")
             wait_for_requests(f"http://127.0.0.1:{args.origin_port}/events",
                               [playlist, playlist.removeprefix("http://qa-iptv.test")], since)
+    result = QA_OUTPUT / "controlled" / f"{args.device}-{args.phase}-result.json"
+    result.parent.mkdir(parents=True, exist_ok=True)
+    result.write_text(json.dumps({"serial": args.serial, "versionName": entry["versionName"],
+                                  "versionCode": entry["versionCode"], "sha256": checksum,
+                                  "phase": args.phase, "passed": True}), encoding="utf-8")
     print(f"{args.device}: {args.phase} passed", flush=True)
 
 

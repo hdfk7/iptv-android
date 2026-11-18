@@ -24,6 +24,73 @@ from upgrade_seed import channel_panel_open, type_in_field
 
 
 class UiRegressionTests(unittest.TestCase):
+    def test_qa_entrypoints_have_valid_syntax(self):
+        import ast
+        for script in Path(release_ui.__file__).parent.glob("*.py"):
+            with self.subTest(script=script.name):
+                ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
+
+    def test_startup_setting_reads_the_selected_value(self):
+        from functional_ui import settings_value
+        root = ET.fromstring('<hierarchy><node text="启动频道"/><node text="上次观看"/></hierarchy>')
+        self.assertEqual(settings_value(root, "启动频道"), "上次观看")
+
+    def test_video_fill_setting_reads_checked_state(self):
+        from functional_ui import settings_value
+        for checked in ("true", "false"):
+            root = ET.fromstring(f'<hierarchy><node checkable="true" checked="{checked}">'
+                                 '<node text="视频铺满屏幕"/></node></hierarchy>')
+            self.assertEqual(settings_value(root, "视频铺满屏幕"), checked == "true")
+
+    def test_missing_setting_cannot_be_reported_as_disabled(self):
+        from functional_ui import settings_value
+        with self.assertRaises(AssertionError):
+            settings_value(ET.fromstring('<hierarchy/>'), "视频铺满屏幕")
+
+    def test_media_volume_readout_parses_the_music_range(self):
+        from menu_ui import parse_volume
+        self.assertEqual(parse_volume("[V] volume is 0 in range [0..16]"), (0, 16))
+
+    def test_audio_dump_volume_reads_music_instead_of_other_streams(self):
+        from menu_ui import parse_volume
+        value = "- STREAM_MUSIC:\n Max: 15\n Current: 2 (speaker): 3, 40000000 (default): 3\n- STREAM_ALARM:\n Max: 7\n Current: 2 (speaker): 5"
+        self.assertEqual(parse_volume(value), (3, 15))
+
+    def test_missing_volume_readout_is_not_a_zero_volume(self):
+        from menu_ui import parse_volume
+        with self.assertRaises(AssertionError):
+            parse_volume("")
+
+    def test_rendering_reuses_only_success_for_the_same_installed_apk(self):
+        from tv_rendering import navigation_verified
+        result = {"passed": True, "serial": "tv", "sha256": "new"}
+        self.assertTrue(navigation_verified(result, "tv", "new"))
+        self.assertFalse(navigation_verified(result, "tv", "old"))
+        self.assertFalse(navigation_verified(result, "other", "new"))
+        self.assertFalse(navigation_verified(dict(result, passed=False), "tv", "new"))
+
+    def test_empty_capture_is_not_saved_as_a_valid_screenshot(self):
+        device = release_ui.Device("offline-test", "phone")
+        device.adb = Mock(return_value=b"")
+        with tempfile.TemporaryDirectory() as folder, patch("release_ui.OUTPUT", Path(folder)):
+            with self.assertRaisesRegex(AssertionError, "Screenshot unavailable"):
+                device.screenshot("phone", "protected-keyboard")
+            self.assertFalse((Path(folder) / "phone-protected-keyboard.png").exists())
+
+    def test_cleanup_accepts_the_current_empty_favorites_label(self):
+        import cleanup
+        device = Mock(device_type="phone")
+        device.tree.side_effect = [ET.fromstring('<hierarchy>'
+            '<node text="收藏" bounds="[100,100][200,140]"/>'
+            '<node text="0 个频道" bounds="[100,150][240,190]"/>'
+            '<node text="国内精选" bounds="[100,300][300,340]"/>'
+            '<node content-desc="正在使用" bounds="[20,300][80,350]"/>'
+            '<node text="https://example.org/default.m3u"/></hierarchy>'),
+            ET.fromstring('<hierarchy><node content-desc="关闭"/></hierarchy>')]
+        with patch("cleanup.verify_installed"), patch("cleanup.open_app"), patch("cleanup.source_manager"), patch("cleanup.close_panels"):
+            cleanup.verify_reset(device, Path("candidate.apk"), {})
+        device.cleanup_hierarchy.assert_called_once()
+
     def test_channel_list_without_group_tabs_is_still_open(self):
         panel = ET.fromstring('<hierarchy><node text="001"/><node text="QA Release"/></hierarchy>')
         controls = ET.fromstring('<hierarchy><node text="频道"/><node text="更多"/></hierarchy>')
@@ -106,6 +173,14 @@ class UiRegressionTests(unittest.TestCase):
             frame = Image.new("RGB", (12, 12), color)
             self.assertEqual(release_ui.focus_color_present(frame, control), selected)
 
+    def test_tv_menu_reaches_right_column_without_activating_left_action(self):
+        device = release_ui.Device("offline-test", "tv")
+        device.key = Mock()
+        with patch("release_ui.tv_highlight", side_effect=[["源管理"], ["上一条线路"], ["下一条线路"]]):
+            device.menu("下一条线路")
+        self.assertEqual([c.args for c in device.key.call_args_list],
+                         [("KEYCODE_DPAD_DOWN",), ("KEYCODE_DPAD_RIGHT",), ("KEYCODE_DPAD_CENTER",)])
+
     def test_phone_more_retries_after_controls_hide(self):
         device = release_ui.Device("offline-test", "phone")
         device.tree = Mock(return_value=ET.fromstring("<hierarchy/>"))
@@ -115,6 +190,52 @@ class UiRegressionTests(unittest.TestCase):
         device.more()
         self.assertEqual(device.player_control.call_count, 2)
         self.assertEqual(device.shell.call_count, 2)
+
+    def test_phone_player_state_reopens_hidden_controls(self):
+        device = release_ui.Device("offline-test", "phone")
+        device.player_control = Mock()
+        device.wait_for = Mock()
+        device.wait_for_player_control("取消收藏")
+        device.player_control.assert_called_once_with("取消收藏")
+        device.wait_for.assert_not_called()
+
+    def test_tv_player_state_does_not_tap_the_screen(self):
+        device = release_ui.Device("offline-test", "tv")
+        device.player_control = Mock()
+        device.wait_for = Mock()
+        device.wait_for_player_control("取消收藏")
+        device.wait_for.assert_called_once_with("取消收藏", "content-desc")
+        device.player_control.assert_not_called()
+
+    def test_close_panels_accepts_closure_on_the_last_allowed_back(self):
+        import upgrade_seed
+        device = Mock()
+        panel = ET.fromstring('<hierarchy><node text="检查应用更新"/></hierarchy>')
+        device.tree.side_effect = [panel] * 6 + [ET.fromstring('<hierarchy/>')]
+        upgrade_seed.close_panels(device)
+        self.assertEqual(device.key.call_count, 6)
+
+    def test_close_panels_recognizes_source_editor_and_advanced_dialogs(self):
+        import upgrade_seed
+        for title in ("播放列表地址", "恢复默认值", "播放超时后自动换线"):
+            with self.subTest(title=title):
+                device = Mock()
+                device.tree.side_effect = [ET.fromstring(f'<hierarchy><node text="{title}"/></hierarchy>'),
+                                           ET.fromstring('<hierarchy/>')]
+                upgrade_seed.close_panels(device)
+                device.key.assert_called_once_with("KEYCODE_BACK")
+
+    def test_source_action_finds_row_after_phone_scroll(self):
+        import upgrade_seed
+        device = Mock(device_type="phone")
+        device.tree.side_effect = [
+            ET.fromstring('<hierarchy><node scrollable="true" bounds="[0,100][400,600]"/></hierarchy>'),
+            ET.fromstring('<hierarchy><node text="Target" bounds="[20,200][180,240]"/>'
+                          '<node content-desc="编辑源" bounds="[300,200][340,240]"/></hierarchy>')]
+        with patch("upgrade_seed.source_manager"):
+            upgrade_seed.source_row_action(device, "Target", "编辑源")
+        device.input.assert_called_once_with("swipe", "200", "580", "200", "120", "350")
+        device.tap.assert_called_once()
 
     def test_installer_rejection_requires_an_explicit_rejection_message(self):
         device = Mock(device_type="phone")

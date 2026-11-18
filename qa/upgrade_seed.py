@@ -52,13 +52,20 @@ def open_app(device):
 
 
 def close_panels(device):
+    labels = ("刷新频道", "添加源", "关闭设置", "检查应用更新", "IP 地址",
+              "播放列表地址", "恢复默认值", "网络连接超时", "网络读取超时",
+              "播放超时后自动换线", "更新检查地址")
+
+    def panel_open(root):
+        return channel_panel_open(root) or any(control(root, label) is not None for label in labels)
+
     for _ in range(6):
         root = device.tree()
-        labels = ("刷新频道", "添加源", "关闭设置", "检查应用更新", "IP 地址")
-        if not channel_panel_open(root) and not any(control(root, label) is not None for label in labels):
+        if not panel_open(root):
             return
         device.key("KEYCODE_BACK")
-    raise AssertionError("App panel did not close")
+    if panel_open(device.tree()):
+        raise AssertionError("App panel did not close")
 
 
 def source_manager(device):
@@ -128,6 +135,44 @@ def source_action(device, title):
     raise AssertionError(f"Source is not reachable: {title}")
 
 
+def source_row_action(device, title, action):
+    """Find a subscription action, including rows outside the initial viewport."""
+    if action not in ("编辑源", "删除源"):
+        raise ValueError(f"Unsupported source row action: {action}")
+    source_manager(device)
+    if device.device_type == "tv":
+        for _ in range(30):
+            if "关闭" in tv_highlight(device):
+                break
+            device.key("KEYCODE_DPAD_UP")
+        else:
+            raise AssertionError("Source manager header is not reachable")
+        for _ in range(30):
+            labels = tv_highlight(device)
+            if title in labels:
+                steps = 1 if action == "编辑源" else 2
+                device.key(*(["KEYCODE_DPAD_RIGHT"] * steps))
+                device.choose_with_remote(action, limit=1)
+                return
+            if "添加源" in labels:
+                break
+            device.key("KEYCODE_DPAD_DOWN")
+    else:
+        for _ in range(12):
+            root = device.tree()
+            button = action_row(root, title, action)
+            if button is not None:
+                device.tap(button)
+                return
+            panel = next((node for node in root.iter("node") if node.get("scrollable") == "true"), None)
+            if panel is None:
+                break
+            left, top, right, bottom = bounds(panel)
+            x = str((left + right) // 2)
+            device.input("swipe", x, str(bottom - 20), x, str(top + 20), "350")
+    raise AssertionError(f"Source action is not reachable: {title}: {action}")
+
+
 def open_channels(device):
     close_panels(device)
     if device.device_type == "tv":
@@ -152,7 +197,7 @@ def add_source(device, name, url, guide):
             type_in_field(device, value)
             close_keyboard(device)
         device.key("KEYCODE_DPAD_DOWN")
-        device.choose_with_remote("保存", limit=1)
+        device.choose_with_remote("保存", direction="KEYCODE_DPAD_RIGHT", limit=2)
     else:
         device.click("添加源", "content-desc")
         for label, value in (("源名称", name), ("播放列表地址", url), ("XMLTV 地址（选填）", guide)):
@@ -214,5 +259,5 @@ def seed(device, url, guide):
         device.key("KEYCODE_INFO")
     else:
         device.tap(device.player_control("收藏节目"))
-    device.wait_for("取消收藏", "content-desc")
+    device.wait_for_player_control("取消收藏")
     close_panels(device)

@@ -22,6 +22,7 @@
     <string name="source_current">正在使用</string>
     <string name="source_use">启用</string>
     <string name="source_add">添加源</string>
+    <string name="source_channel_count">%1$d 个频道</string>
     <string name="source_restore">恢复默认源</string>
     <string name="source_edit">编辑源</string>
     <string name="source_delete">删除源</string>
@@ -150,4 +151,18 @@
     <string name="guide_title">%1$s · 今日节目单</string>
     <string name="guide_action">节目单</string>
     <string name="guide_empty">暂无今日节目表</string>
+    <string name="advanced_title">高级设置</string>
+    <string name="advanced_connect">网络连接超时</string>
+    <string name="advanced_read">网络读取超时</string>
+    <string name="advanced_line">播放超时后自动换线</string>
+    <string name="advanced_debug">播放调试信息</string>
+    <string name="advanced_url">更新检查地址</string>
+    <string name="advanced_defaults">恢复默认值</string>
+    <string name="advanced_cancel">取消</string>
+    <string name="advanced_save">保存</string>
+    <string name="advanced_apply">确定</string>
+    <string name="advanced_seconds">秒</string>
+    <string name="advanced_bad_url">请输入有效的 HTTPS 地址</string>
+    <string name="advanced_bad_timeout">请输入有效的正数，最多保留三位小数</string>
+    <string name="advanced_save_error">保存失败，请重试</string>
 </resources>

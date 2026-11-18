@@ -3,6 +3,7 @@ package cn.hdfk7.android.iptv.feature.player
 import android.media.AudioManager
 import android.view.KeyEvent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import cn.hdfk7.android.iptv.core.ui.components.IptvDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import cn.hdfk7.android.iptv.R
+import cn.hdfk7.android.iptv.core.ui.theme.Border
 import cn.hdfk7.android.iptv.core.ui.theme.CinemaMenuSurface
 import cn.hdfk7.android.iptv.core.ui.theme.FocusBorder
 import cn.hdfk7.android.iptv.core.ui.theme.FocusCornerRadius
@@ -178,20 +180,38 @@ private fun CinemaMoreMenuContent(
             })
             .verticalScroll(rememberScrollState()).padding(8.dp),
         content = {
+            val hasLineActions = rows.any(predicate = { row -> MoreAction.PREVIOUS_LINE in row })
+            val lineStatus: @Composable () -> Unit = {
+                Text(text = stringResource(R.string.tv_line_status, state.line, state.lineCount), color = Muted, fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 12.dp, top = 5.dp))
+            }
             for (row in rows) {
-                Row(modifier = Modifier.fillMaxWidth(), content = {
-                    for (action in row) {
-                        CinemaAction(
-                            label = stringResource(action.label),
-                            onClick = { activate(action) },
-                            modifier = Modifier.weight(1f).then(navigation(action)),
-                            focusHighlight = if (television) false else null
-                        )
+                val actions: @Composable () -> Unit = {
+                    Row(modifier = Modifier.fillMaxWidth(), content = {
+                        for (action in row) {
+                            CinemaAction(
+                                label = stringResource(action.label),
+                                onClick = { activate(action) },
+                                modifier = Modifier.weight(1f).then(navigation(action)),
+                                focusHighlight = if (television) false else null
+                            )
+                        }
+                    })
+                }
+                if (television && MoreAction.PREVIOUS_LINE in row) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(4.dp),
+                        content = {
+                            lineStatus()
+                            actions()
+                        }
+                    )
+                } else {
+                    actions()
+                    if (row.first() == MoreAction.RETRY && state.lineCount > 0 && (!television || !hasLineActions)) {
+                        lineStatus()
                     }
-                })
-                if (row.first() == MoreAction.RETRY && state.lineCount > 0) {
-                    Text(text = stringResource(R.string.tv_line_status, state.line, state.lineCount), color = Muted, fontSize = 12.sp,
-                        modifier = Modifier.padding(start = 12.dp, top = 5.dp))
                 }
             }
             if (state.playback == PlaybackStatus.ERROR) {

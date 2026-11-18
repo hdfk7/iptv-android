@@ -303,7 +303,7 @@ internal fun CinemaPlayerScreen(
                                 .padding(bottom = portraitBottom).fillMaxHeight(0.46f)
                         } else {
                             Modifier.align(Alignment.TopStart).then(controlInsets).padding(start = inset, top = 24.dp, bottom = if (television) 86.dp else 76.dp)
-                                .width(minOf(248.dp, maxWidth * 0.40f)).fillMaxHeight()
+                                .width(minOf(if (television) 276.dp else 248.dp, maxWidth * 0.40f)).fillMaxHeight()
                         },
                         television = television,
                         selectedRowFocus = selectedRowFocus,
@@ -392,7 +392,7 @@ private fun CinemaControls(
     val channelName: @Composable (Modifier) -> Unit = { nameModifier ->
         Column(modifier = nameModifier, verticalArrangement = Arrangement.spacedBy(2.dp), content = {
             if (displayName != null) {
-                Text(text = displayName, color = Accent, fontSize = 22.sp,
+                Text(text = displayName, color = Accent, fontSize = if (television) 23.sp else 20.sp,
                     fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (!state.selectedSourceName.isNullOrBlank()) {
@@ -400,7 +400,7 @@ private fun CinemaControls(
             }
         })
     }
-    val actionBackground = Modifier.background(BackdropBottom.copy(alpha = 0.68f), RoundedCornerShape(12.dp))
+    val actionBackground = Modifier.background(BackdropBottom.copy(alpha = 0.80f), RoundedCornerShape(12.dp))
         .padding(horizontal = 4.dp)
     val actions: @Composable (Modifier, Dp) -> Unit = { actionWidth, horizontalPadding ->
         CinemaAction(label = stringResource(R.string.tv_channels), onClick = onChannels,
