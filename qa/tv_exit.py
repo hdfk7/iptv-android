@@ -1,5 +1,10 @@
 """Check the TV exit hint and the two-press Back gesture on the signed Release."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import io
 import json

@@ -1,4 +1,10 @@
 """Measure ordinary channel switches or forced line recovery on a signed APK."""
+
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 import math

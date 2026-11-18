@@ -1,12 +1,13 @@
 package cn.hdfk7.android.iptv.feature.player
 
+import cn.hdfk7.android.iptv.core.ui.components.DialogLayout
+import cn.hdfk7.android.iptv.core.ui.components.dialogSurface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.*
@@ -39,7 +40,6 @@ import cn.hdfk7.android.iptv.core.ui.components.TvIconButton
 import cn.hdfk7.android.iptv.core.ui.components.tvFocusBackground
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.BackdropBottom
-import cn.hdfk7.android.iptv.core.ui.theme.DialogSurface
 import cn.hdfk7.android.iptv.core.ui.theme.FocusBorder
 import cn.hdfk7.android.iptv.core.ui.theme.Muted
 import java.time.Instant
@@ -113,10 +113,9 @@ internal fun ProgrammeScheduleDialog(
         })
         Column(
             modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp)
-                .width(560.dp).heightIn(max = 480.dp).then(navigation)
-                .background(DialogSurface, RoundedCornerShape(22.dp))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .width(DialogLayout.StandardWidth).heightIn(max = DialogLayout.MaxHeight).then(navigation)
+                .dialogSurface(),
+            verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing),
             content = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = {
                     DialogTitle(text = stringResource(R.string.guide_title, channelName),
@@ -136,7 +135,7 @@ internal fun ProgrammeScheduleDialog(
                     LazyColumn(
                         state = list,
                         modifier = Modifier.weight(1f, fill = false).fillMaxWidth()
-                            .background(BackdropBottom, RoundedCornerShape(14.dp)),
+                            .background(BackdropBottom, DialogLayout.GroupShape),
                         contentPadding = PaddingValues(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp), content = {
                             itemsIndexed(items = programmes, itemContent = { index, item ->
@@ -152,7 +151,7 @@ internal fun ProgrammeScheduleDialog(
                                         selected = { current },
                                         borderColor = FocusBorder
                                     ).then(focusSemantics).padding(rowPadding),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(DialogLayout.Spacing),
                                     content = {
                                         Text(text = timeFormat.format(Instant.ofEpochMilli(item.startsAt)), color = Muted,
                                             modifier = Modifier.alignByBaseline().widthIn(min = 44.dp),

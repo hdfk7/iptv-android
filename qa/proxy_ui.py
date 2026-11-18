@@ -1,22 +1,24 @@
 """Validate proxy state, invalid input and persistence through the installed UI."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 
 from controlled_ui import control, open_proxy
-from release_ui import Device, QA_OUTPUT, bounds, find, verify_release_apk
-from upgrade_seed import close_keyboard, close_panels, type_in_field, open_app
+from release_ui import QA_OUTPUT, bounds, find
+from upgrade_seed import close_keyboard, close_panels, type_in_field, add_device_arguments, prepare_release_device
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True)
-    parser.add_argument("--device", choices=("phone", "tv"), required=True)
+    add_device_arguments(parser)
     parser.add_argument("--proxy-port", type=int, default=18766)
     args = parser.parse_args()
-    device = Device(args.serial, args.device)
-    _, checksum = verify_release_apk(device)
-    open_app(device)
+    device, _, checksum = prepare_release_device(args.serial, args.device)
     television = args.device == "tv"
     results = []
 

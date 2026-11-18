@@ -1,5 +1,10 @@
 """Verify a data-preserving local upgrade on an Android phone or TV."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
@@ -7,7 +12,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
 from pathlib import Path
 

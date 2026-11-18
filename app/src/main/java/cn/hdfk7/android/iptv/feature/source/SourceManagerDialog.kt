@@ -1,5 +1,7 @@
 package cn.hdfk7.android.iptv.feature.source
 
+import cn.hdfk7.android.iptv.core.ui.components.DialogLayout
+import cn.hdfk7.android.iptv.core.ui.components.dialogSurface
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -11,7 +13,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.Icon
@@ -93,22 +94,21 @@ fun SourceManagerDialog(viewModel: SourceManagerViewModel) {
                             Modifier.verticalScroll(rememberScrollState()).padding(16.dp)
                                 .height(if (twoColumns) 306.dp else 400.dp)
                         } else {
-                            Modifier.padding(16.dp).heightIn(max = 480.dp)
+                            Modifier.padding(DialogLayout.Inset).heightIn(max = DialogLayout.MaxHeight)
                         }
-                        val innerPadding = 16.dp
+                        val innerPadding = DialogLayout.Inset
                         val panelWidth = if (state.deleting != null) {
                             420.dp
                         } else if (state.draft != null) {
                             val fieldsWidth = if (twoColumns) FormTwoColumnWidth else FormFieldWidth
-                            if (twoColumns) 560.dp else fieldsWidth + innerPadding * 2
-                        } else if (television && state.deleting == null) {
+                            if (twoColumns) DialogLayout.StandardWidth else fieldsWidth + innerPadding * 2
+                        } else if (television) {
                             620.dp
                         } else {
                             710.dp
                         }
                         Column(modifier = panelHeight.width(panelWidth)
-                            .background(DialogSurface, RoundedCornerShape(22.dp))
-                            .padding(innerPadding), verticalArrangement = Arrangement.spacedBy(12.dp), content = {
+                            .dialogSurface(), verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing), content = {
                             when {
                                 state.draft != null -> {
                                     SourceEditor(state = state, viewModel = viewModel, twoColumns = twoColumns, television = television)
@@ -196,12 +196,12 @@ private fun SourceList(state: SourceManagerState, library: SourceLibrary, viewMo
                     active = library.activeSourceId == SourceLibrary.FAVORITES_ID,
                     busy = state.busy,
                     onActivate = viewModel::showFavorites,
-                    highlighted = highlighted(SourceLibrary.FAVORITES_ID)
+                    highlighted = highlighted(SourceLibrary.FAVORITES_ID), television = television
                 )
             })
             itemsIndexed(items = library.sources, key = { _, source -> source.id }, itemContent = { _, source ->
                 SourceCard(name = source.name, detail = source.url, active = library.activeSourceId == source.id, busy = state.busy, onActivate = { viewModel.activate(source.id) }, onEdit = { viewModel.edit(source) }, onDelete = { viewModel.askDelete(source) },
-                    highlighted = highlighted(source.id), editHighlighted = highlighted(source.id, 1), deleteHighlighted = highlighted(source.id, 2))
+                    highlighted = highlighted(source.id), editHighlighted = highlighted(source.id, 1), deleteHighlighted = highlighted(source.id, 2), television = television)
             })
         })
         SourceError(error = state.error)
@@ -236,8 +236,8 @@ private fun SourceList(state: SourceManagerState, library: SourceLibrary, viewMo
 @Composable
 private fun SourceCard(name: String, detail: String, active: Boolean, busy: Boolean, onActivate: () -> Unit,
     highlighted: Boolean?, onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null,
-    editHighlighted: Boolean? = null, deleteHighlighted: Boolean? = null): Unit {
-    val shape = RoundedCornerShape(14.dp)
+    editHighlighted: Boolean? = null, deleteHighlighted: Boolean? = null, television: Boolean): Unit {
+    val shape = DialogLayout.GroupShape
     Row(
         modifier = Modifier.fillMaxWidth().background(BackdropBottom, shape).padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -263,10 +263,10 @@ private fun SourceCard(name: String, detail: String, active: Boolean, busy: Bool
                 }
             )
             if (onEdit != null) {
-                SourceRowAction(R.drawable.ic_edit, R.string.source_edit, onEdit, editHighlighted, !busy)
+                SourceRowAction(R.drawable.ic_edit, R.string.source_edit, onEdit, editHighlighted, !busy, television)
             }
             if (onDelete != null) {
-                SourceRowAction(R.drawable.ic_delete, R.string.source_delete, onDelete, deleteHighlighted, !busy)
+                SourceRowAction(R.drawable.ic_delete, R.string.source_delete, onDelete, deleteHighlighted, !busy, television)
             }
         }
     )
@@ -379,7 +379,7 @@ private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerView
     val editorModifier = if (television) navigation else navigation.verticalScroll(scroll)
     val fields: @Composable () -> Unit = {
         Column(
-            modifier = Modifier.fillMaxWidth().background(BackdropBottom, RoundedCornerShape(14.dp)).padding(10.dp),
+            modifier = Modifier.fillMaxWidth().background(BackdropBottom, DialogLayout.GroupShape).padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp), content = {
             if (twoColumns) {
                 Row(horizontalArrangement = Arrangement.spacedBy(FormFieldSpacing), content = {
@@ -401,7 +401,7 @@ private fun SourceEditor(state: SourceManagerState, viewModel: SourceManagerView
         })
     }
     Column(modifier = editorModifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp), content = {
+        verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing), content = {
         DialogHeader(title = stringResource(if (draft.id == null) R.string.source_add else R.string.source_edit),
             onClose = viewModel::back, closeFocus = if (television) null else closeFocus, highlighted = highlighted(0))
         if (television) {
@@ -446,7 +446,7 @@ private fun SourceDelete(state: SourceManagerState, viewModel: SourceManagerView
     fun highlighted(index: Int): Boolean? {
         return if (television) focused == index else null
     }
-    Column(modifier = navigation, verticalArrangement = Arrangement.spacedBy(12.dp), content = {
+    Column(modifier = navigation, verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing), content = {
         DialogHeader(title = stringResource(R.string.source_delete_title, source.name), onClose = viewModel::back,
             highlighted = highlighted(0))
         SourceError(error = state.error)
@@ -462,11 +462,11 @@ private fun SourceDelete(state: SourceManagerState, viewModel: SourceManagerView
 }
 
 @Composable
-private fun SourceRowAction(icon: Int, label: Int, onClick: () -> Unit, highlighted: Boolean?, enabled: Boolean): Unit {
+private fun SourceRowAction(icon: Int, label: Int, onClick: () -> Unit, highlighted: Boolean?, enabled: Boolean, television: Boolean): Unit {
     val description = stringResource(label)
     TvAction(
         onClick = onClick, enabled = enabled,
-        modifier = Modifier.size(40.dp).sourceLogicalFocus(highlighted)
+        modifier = Modifier.size(if (television) 40.dp else DialogLayout.PhoneTarget).sourceLogicalFocus(highlighted)
             .semantics(properties = { contentDescription = description }),
         focusHighlight = highlighted,
         containerColor = Color.Transparent,
@@ -497,7 +497,7 @@ private fun SourceTextAction(
 
 @Composable
 private fun DialogHeader(title: String, onClose: () -> Unit, closeFocus: FocusRequester? = null, highlighted: Boolean? = null): Unit {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(DialogLayout.Spacing), content = {
         DialogTitle(text = title, modifier = Modifier.weight(1f))
         val modifier = if (closeFocus != null) Modifier.focusRequester(closeFocus) else Modifier
         TvIconButton(icon = R.drawable.ic_close, description = stringResource(R.string.close), onClick = onClose,

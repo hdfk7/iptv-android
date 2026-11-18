@@ -1,5 +1,10 @@
 """Regress both devices' cache under one coordinated fixture outage."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 import time

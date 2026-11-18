@@ -1,15 +1,21 @@
 package cn.hdfk7.android.iptv.feature.update
 
+import cn.hdfk7.android.iptv.core.ui.components.DialogLayout
+import cn.hdfk7.android.iptv.core.ui.components.dialogSurface
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -31,7 +37,6 @@ import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.tvDirections
 import cn.hdfk7.android.iptv.core.ui.theme.Accent
 import cn.hdfk7.android.iptv.core.ui.theme.BackdropBottom
-import cn.hdfk7.android.iptv.core.ui.theme.DialogSurface
 import cn.hdfk7.android.iptv.core.ui.theme.Muted
 import kotlinx.coroutines.launch
 
@@ -75,25 +80,26 @@ internal fun AppUpdateContent(
             }
         })
         Column(
-            modifier = Modifier.padding(16.dp).widthIn(max = if (television) 560.dp else 460.dp).fillMaxWidth().heightIn(max = 480.dp)
-                .background(DialogSurface, RoundedCornerShape(22.dp)).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(DialogLayout.Inset).widthIn(max = if (television) DialogLayout.StandardWidth else DialogLayout.PhoneWidth).fillMaxWidth().heightIn(max = DialogLayout.MaxHeight)
+                .dialogSurface(),
+            verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing),
             content = {
                 DialogTitle(text = stringResource(R.string.app_update_title))
                 Text(text = message, color = Accent, fontSize = 15.sp)
                 val notesSurface = if (notes.isNotBlank() && !downloading) {
-                    Modifier.fillMaxWidth().background(BackdropBottom, RoundedCornerShape(14.dp)).padding(12.dp)
+                    Modifier.fillMaxWidth().background(BackdropBottom, DialogLayout.GroupShape).padding(12.dp)
                 } else {
                     Modifier
                 }
                 Column(
                     modifier = Modifier.weight(1f, fill = false).then(notesSurface),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing),
                     content = {
                         if (notes.isNotBlank() && !downloading) {
                             UpdateNotesTitle(notesVersion)
                             Column(
-                                modifier = Modifier.weight(1f, fill = false).verticalScroll(scroll),
+                                modifier = Modifier.weight(1f, fill = false).fillMaxWidth()
+                                    .notesScrollIndicator(scroll).padding(end = 8.dp).verticalScroll(scroll),
                                 verticalArrangement = Arrangement.spacedBy(8.dp), content = {
                                     for (line in notes.lineSequence().map(transform = String::trim).filter(predicate = String::isNotEmpty)) {
                                         if (line.startsWith("• ") || line.startsWith("- ")) {
@@ -191,9 +197,22 @@ private fun UpdateNotesTitle(version: String): Unit {
 private fun UpdateDialogContainer(television: Boolean, downloading: Boolean, onClose: () -> Unit, content: @Composable () -> Unit): Unit {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(dismissOnClickOutside = !downloading, usePlatformDefaultWidth = false), content = {
         Box(
-            modifier = if (television) Modifier.width(560.dp) else Modifier,
+            modifier = if (television) Modifier.width(DialogLayout.StandardWidth) else Modifier,
             contentAlignment = Alignment.Center,
             content = { content() }
         )
     })
 }
+
+private fun Modifier.notesScrollIndicator(scroll: ScrollState): Modifier = drawWithContent(onDraw = {
+    drawContent()
+    val range = scroll.maxValue
+    if (range > 0 && range < Int.MAX_VALUE && size.height > 0f) {
+        val thumb = (size.height * size.height / (size.height + range))
+            .coerceIn(minimumValue = minOf(18.dp.toPx(), size.height), maximumValue = size.height)
+        val top = (size.height - thumb) * scroll.value / range
+        val x = if (layoutDirection == LayoutDirection.Ltr) size.width - 2.dp.toPx() else 2.dp.toPx()
+        drawLine(color = Muted.copy(alpha = 0.55f), start = Offset(x, top), end = Offset(x, top + thumb),
+            strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+    }
+})

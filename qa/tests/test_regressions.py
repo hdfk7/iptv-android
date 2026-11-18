@@ -1,9 +1,13 @@
 """Offline regressions for QA bugs; never operate an Android device."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import hashlib
 import io
 import json
-import sys
 import tempfile
 import threading
 import unittest
@@ -217,7 +221,7 @@ class UiRegressionTests(unittest.TestCase):
 
     def test_close_panels_recognizes_source_editor_and_advanced_dialogs(self):
         import upgrade_seed
-        for title in ("播放列表地址", "恢复默认值", "播放超时后自动换线"):
+        for title in ("播放列表地址", "删除源", "恢复默认值", "播放超时后自动换线"):
             with self.subTest(title=title):
                 device = Mock()
                 device.tree.side_effect = [ET.fromstring(f'<hierarchy><node text="{title}"/></hierarchy>'),
@@ -236,6 +240,16 @@ class UiRegressionTests(unittest.TestCase):
             upgrade_seed.source_row_action(device, "Target", "编辑源")
         device.input.assert_called_once_with("swipe", "200", "580", "200", "120", "350")
         device.tap.assert_called_once()
+
+    def test_source_action_uses_vertical_overlap_instead_of_pixel_distance(self):
+        from upgrade_seed import action_row
+
+        root = ET.fromstring(
+            '<hierarchy><node text="Target" bounds="[20,284][180,304]"/>'
+            '<node content-desc="删除源" bounds="[300,215][345,258]"/>'
+            '<node content-desc="删除源" bounds="[300,272][345,324]"/></hierarchy>'
+        )
+        self.assertIs(action_row(root, "Target", "删除源"), root[-1])
 
     def test_installer_rejection_requires_an_explicit_rejection_message(self):
         device = Mock(device_type="phone")

@@ -1,5 +1,10 @@
 """Finish a full run after IPTV was reset on both devices using the system UI."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import hashlib
 import json

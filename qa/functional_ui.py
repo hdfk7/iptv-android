@@ -1,9 +1,15 @@
 """Regress playback, favorites, settings and recent history using the installed App UI."""
+
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 import time
-from release_ui import Device, find, tv_highlight, QA_OUTPUT, verify_release_apk
-from upgrade_seed import close_panels, source_action, open_channels, select_channel, open_app
+from release_ui import find, tv_highlight, QA_OUTPUT
+from upgrade_seed import close_panels, source_action, open_channels, select_channel, add_device_arguments, prepare_release_device
 from controlled_ui import verify_moving_picture
 
 
@@ -20,13 +26,18 @@ def settings_value(root, label):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--serial', required=True)
-    p.add_argument('--device', choices=('phone', 'tv'), required=True)
+    add_device_arguments(p)
     p.add_argument('--source', help="Fixture source; defaults to this run's proxy-guide checkpoint")
     a = p.parse_args()
-    d = Device(a.serial, a.device)
-    _, checksum = verify_release_apk(d)
-    open_app(d)
+    source = a.source
+    if source is None:
+        checkpoint = QA_OUTPUT / 'controlled' / (a.device + '-proxy-source.json')
+        if not checkpoint.is_file():
+            p.error('prepare the proxy-guide fixture or pass the name of an existing fixture with --source')
+        prepared = json.loads(checkpoint.read_text(encoding='utf-8'))
+        assert prepared['serial'] == a.serial, 'Source checkpoint belongs to another device'
+        source = prepared['name']
+    d, _, checksum = prepare_release_device(a.serial, a.device)
     tv = a.device == 'tv'
     down = 'KEYCODE_DPAD_DOWN'
     up = 'KEYCODE_DPAD_UP'
@@ -72,12 +83,6 @@ def main():
         d.more()
         d.menu(label)
     try:
-        source = a.source
-        if source is None:
-            checkpoint = QA_OUTPUT / 'controlled' / (a.device + '-proxy-source.json')
-            prepared = json.loads(checkpoint.read_text(encoding='utf-8'))
-            assert prepared['serial'] == a.serial, 'Source checkpoint belongs to another device'
-            source = prepared['name']
         source_action(d, source)
         open_channels(d)
         select_channel(d, 'QA History')

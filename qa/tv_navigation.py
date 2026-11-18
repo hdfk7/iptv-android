@@ -1,8 +1,12 @@
 """Verify TV shortcuts and return paths using the current signed Release APK."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
-import sys
 import xml.etree.ElementTree as ET
 
 from release_ui import QA_OUTPUT, Device, find, verify_release_apk, tv_highlight

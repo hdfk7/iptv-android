@@ -1,12 +1,13 @@
 package cn.hdfk7.android.iptv.feature.player
 
+import cn.hdfk7.android.iptv.core.ui.components.DialogLayout
+import cn.hdfk7.android.iptv.core.ui.components.dialogSurface
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -176,7 +177,7 @@ private fun HomeSettingsDialog(
     val configuration = LocalConfiguration.current
     val twoColumns = !television && configuration.screenWidthDp >= 580 && configuration.screenHeightDp < 420
     val width = when {
-        twoColumns -> 560.dp
+        twoColumns -> DialogLayout.StandardWidth
         television -> 440.dp
         else -> 380.dp
     }
@@ -199,9 +200,8 @@ private fun HomeSettingsDialog(
             return if (television) selection == control else null
         }
         Column(
-            modifier = Modifier.fillMaxWidth().background(DialogSurface, RoundedCornerShape(22.dp))
-                .then(navigation).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().dialogSurface(contentModifier = navigation),
+            verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing),
             content = {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -220,12 +220,12 @@ private fun HomeSettingsDialog(
                 )
                 Column(
                     modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing),
                     content = {
                         val services: @Composable () -> Unit = {
                             SettingsGroup(content = {
                                 SettingsEntry(
-                                    icon = R.drawable.ic_settings,
+                                    icon = R.drawable.ic_proxy_settings,
                                     title = stringResource(R.string.proxy_title),
                                     onClick = onProxy,
                                     highlighted = highlighted(SettingsControl.Proxy)
@@ -256,7 +256,7 @@ private fun HomeSettingsDialog(
                                 )
                                 if (television) {
                                     SettingsEntry(
-                                        icon = R.drawable.ic_settings,
+                                        icon = R.drawable.ic_rendering_compatibility,
                                         title = stringResource(R.string.tv_rendering_compatibility),
                                         checked = LocalTvRenderingCompatibility.current,
                                         onClick = onToggleRenderingCompatibility,
@@ -264,7 +264,7 @@ private fun HomeSettingsDialog(
                                     )
                                 }
                                 SettingsEntry(
-                                    icon = R.drawable.ic_settings,
+                                    icon = R.drawable.ic_advanced_settings,
                                     title = stringResource(R.string.advanced_title),
                                     onClick = onAdvanced,
                                     highlighted = highlighted(SettingsControl.Advanced)
@@ -272,7 +272,7 @@ private fun HomeSettingsDialog(
                             })
                         }
                         if (twoColumns) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), content = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(DialogLayout.Spacing), content = {
                                 Box(modifier = Modifier.weight(1f), content = { services() })
                                 Box(modifier = Modifier.weight(1f), content = { playback() })
                             })
@@ -313,7 +313,7 @@ internal fun SettingsMenuContainer(
 @Composable
 internal fun SettingsGroup(content: @Composable ColumnScope.() -> Unit): Unit {
     Column(
-        modifier = Modifier.fillMaxWidth().background(BackdropBottom, RoundedCornerShape(14.dp)).padding(4.dp),
+        modifier = Modifier.fillMaxWidth().background(BackdropBottom, DialogLayout.GroupShape).padding(4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
         content = content
     )

@@ -1,5 +1,6 @@
 package cn.hdfk7.android.iptv.feature.player
 
+import cn.hdfk7.android.iptv.core.ui.components.DialogLayout
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -283,7 +284,11 @@ private fun ChannelRow(
         })
     })
     val hasPreview = preview != null
-    val rowHeight = if (hasPreview) Modifier.heightIn(min = 72.dp) else Modifier.height(40.dp)
+    val rowHeight = when {
+        hasPreview -> Modifier.heightIn(min = 72.dp)
+        television -> Modifier.height(40.dp)
+        else -> Modifier.heightIn(min = DialogLayout.PhoneTarget)
+    }
     val rowModifier = Modifier.fillMaxWidth().then(rowHeight)
         .tvFocusBackground(focused = highlighted, selected = selected, borderColor = FocusBorder)
         .focusRequester(channelFocus)
@@ -311,11 +316,11 @@ private fun ChannelRow(
         val focused = highlighted()
         val playing = selected()
         val titleBaseline = if (hasPreview) Modifier.alignByBaseline() else Modifier
-        Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else if (playing) Accent else Muted, modifier = titleBaseline.width(if (television) 34.dp else 28.dp))
+        Text(text = stringResource(R.string.channel_number, index + 1), fontSize = if (television) 12.sp else 11.sp, color = if (focused) FocusInk.copy(alpha = 0.65f) else Muted, modifier = titleBaseline.width(if (television) 34.dp else 28.dp))
         Column(modifier = titleBaseline.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp), content = {
             Text(text = displayName, color = if (focused) FocusInk else Accent, fontSize = if (television) 16.sp else 14.sp, lineHeight = if (hasPreview) 20.sp else androidx.compose.ui.unit.TextUnit.Unspecified, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (preview != null) {
-                val guideColor = if (focused) FocusInk.copy(alpha = 0.75f) else Muted
+                val guideColor = if (focused) FocusInk.copy(alpha = 0.85f) else Muted
                 preview.current?.let(block = { title ->
                     Text(text = stringResource(R.string.programme_current, title), color = guideColor, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 })
@@ -325,7 +330,7 @@ private fun ChannelRow(
             }
         })
         if (playing) {
-            Box(modifier = Modifier.size(6.dp).background(FocusBorder, androidx.compose.foundation.shape.CircleShape))
+            Box(modifier = Modifier.size(6.dp).background(Gold, androidx.compose.foundation.shape.CircleShape))
         }
     }
     if (television) {

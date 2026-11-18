@@ -1,5 +1,10 @@
 """Drive controlled playback, cross-midnight guide and proxy checks through UI."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import io
 import json
@@ -9,8 +14,8 @@ from urllib.request import urlopen
 
 from PIL import Image, ImageChops
 
-from release_ui import Device, QA_OUTPUT, bounds, find, tv_highlight, verify_release_apk
-from upgrade_seed import (add_source, close_keyboard, close_panels, control, open_app,
+from release_ui import QA_OUTPUT, bounds, find, tv_highlight
+from upgrade_seed import (add_source, close_keyboard, close_panels, control, add_device_arguments, prepare_release_device,
                           open_channels, source_action, type_in_field)
 
 
@@ -182,8 +187,7 @@ def guide_address(device):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True)
-    parser.add_argument("--device", choices=("phone", "tv"), required=True)
+    add_device_arguments(parser)
     parser.add_argument("--phase", choices=("hls", "proxy-guide", "after-restart"), required=True)
     parser.add_argument("--origin-port", type=int, default=18764)
     parser.add_argument("--proxy-port", type=int, default=18766)
@@ -193,9 +197,7 @@ def main():
         parser.error("The HLS case uses a TV remote")
     if args.phase == "after-restart" and not args.old_pid:
         parser.error("--old-pid is required to verify a cold restart")
-    device = Device(args.serial, args.device)
-    entry, checksum = verify_release_apk(device)
-    open_app(device)
+    device, entry, checksum = prepare_release_device(args.serial, args.device)
     if args.phase == "hls":
         verify_hls(device, args.origin_port)
     else:

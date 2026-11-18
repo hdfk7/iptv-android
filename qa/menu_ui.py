@@ -1,13 +1,18 @@
 """Verify channel shortcuts, manual line changes and App volume actions."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 import re
 import time
 
 from controlled_ui import verify_moving_picture, wait_for_requests
-from release_ui import Device, QA_OUTPUT, find, verify_release_apk
-from upgrade_seed import close_panels, open_channels, select_channel, source_action, open_app
+from release_ui import QA_OUTPUT, find
+from upgrade_seed import close_panels, open_channels, select_channel, source_action, add_device_arguments, prepare_release_device
 
 
 def parse_volume(text):
@@ -24,14 +29,11 @@ def parse_volume(text):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True)
-    parser.add_argument("--device", choices=("phone", "tv"), required=True)
+    add_device_arguments(parser)
     parser.add_argument("--origin-port", type=int, default=18764)
     parser.add_argument("--source")
     args = parser.parse_args()
-    device = Device(args.serial, args.device)
-    _, checksum = verify_release_apk(device)
-    open_app(device)
+    device, _, checksum = prepare_release_device(args.serial, args.device)
     television = args.device == "tv"
     results = []
     source = args.source

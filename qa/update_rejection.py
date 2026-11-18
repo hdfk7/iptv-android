@@ -1,5 +1,10 @@
 """Verify a system installer rejection with a staged, genuinely rejected update."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 import time

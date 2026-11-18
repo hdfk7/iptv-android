@@ -124,7 +124,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val proxy = app.proxySettings.current?.takeIf(predicate = { settings -> settings.enabled })
         historyScope = "$transport:${proxy?.host}:${proxy?.port}"
     }
-    private val attemptedLines = mutableSetOf<String>()
     private var rankingSnapshot: Long? = null
     private var wantsPlayback = false
     private var previewing = false
@@ -140,7 +139,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var fallback: Job? = null
     private val generation: Int
         get() = playbackSession.generation
-    private val lineFailures = mutableListOf<PlaybackFailure>()
     private var refreshJob: Job? = null
     private val guide = PlayerProgrammeGuide(
         scope = viewModelScope,
@@ -199,7 +197,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         val playingUrl = playing.streams.getOrNull(streamIndex)
                         val candidates = candidateStreams(current)
                         activeChannel = current.copy(streams = candidates)
-                        attemptedLines.retainAll(current.streams.toSet())
+                        playbackSession.retainLines(current.streams)
                         if (state.value.playback == PlaybackStatus.ERROR) {
                             streamIndex = current.streams.size
                             publishLineRanking()
@@ -391,8 +389,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val channel = activeChannel
         if (channel != null) {
             activeChannel = rankedChannel(channel)
-            attemptedLines.clear()
-            lineFailures.clear()
+            playbackSession.resetLines()
         }
         streamIndex = 0
         start()
@@ -490,7 +487,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     val readyMs = active.readyAt?.let(block = { time -> time - active.startedAt }) ?: -1
                     Log.d("IptvPlayback", "first_frame_ms=${(now - active.startedAt).coerceAtLeast(1L)} " +
                         "tune_ms=${now - tuneStartedAt} recovery_ms=${if (fallbackStartedAt > 0L) now - fallbackStartedAt else 0L} " +
-                        "first_line=${attemptedLines.isEmpty()} tune_id=$generation tracks_ms=$tracksMs ready_ms=$readyMs")
+                        "first_line=${(playbackSession.attemptedCount == 0)} tune_id=$generation tracks_ms=$tracksMs ready_ms=$readyMs")
                 }
                 fallbackStartedAt = 0L
             }
@@ -503,8 +500,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (oldScope != historyScope && channel != null) {
                 activeChannel = rankedChannel(channel)
                 streamIndex = 0
-                attemptedLines.clear()
-                lineFailures.clear()
+                playbackSession.resetLines()
             }
             tuneStartedAt = SystemClock.elapsedRealtime()
             fallbackStartedAt = 0L
@@ -571,8 +567,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         tuneStartedAt = SystemClock.elapsedRealtime()
         fallbackStartedAt = 0L
         streamIndex = index
-        attemptedLines.clear()
-        lineFailures.clear()
+        playbackSession.resetLines()
         wantsPlayback = playing
         if (playing) {
             previewing = false
@@ -715,11 +710,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             mutableState.value = state.value.copy(
                 playback = if (previewing) PlaybackStatus.IDLE else PlaybackStatus.ERROR,
                 previewFrameVisible = false, line = 0, lineCount = limit,
-                playbackFailureMessage = lineFailures.distinct().singleOrNull()?.message ?: R.string.stream_error,
-                failedLineMessages = lineFailures.map(transform = PlaybackFailure::message))
+                playbackFailureMessage = playbackSession.failureReasons.distinct().singleOrNull()?.message ?: R.string.stream_error,
+                failedLineMessages = playbackSession.failureReasons.map(transform = PlaybackFailure::message))
             if (debugPlayback) {
                 Log.d("IptvPlayback", "tune_failed_id=$generation lines_tried=" +
-                    attemptedLines.size + " causes=" + lineFailures.joinToString(","))
+                    playbackSession.attemptedCount + " causes=" + playbackSession.failureReasons.joinToString(","))
             }
             return
         }
@@ -802,13 +797,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (fallbackStartedAt == 0L) {
             fallbackStartedAt = SystemClock.elapsedRealtime()
         }
-        attemptedLines.add(url)
-        lineFailures.add(reason)
+        playbackSession.recordFailure(url, reason)
         if (!previewing) {
             lineRanking.failed(channel.id, url)
         }
         publishLineRanking()
-        val next = activeChannel?.streams?.indexOfFirst(predicate = { candidate -> candidate !in attemptedLines }) ?: -1
+        val next = playbackSession.nextLine(activeChannel?.streams)
         streamIndex = if (next < 0) count else next
         // Defer to avoid modifying the player inside its event dispatch.
         fallback = viewModelScope.launch(block = {
@@ -824,12 +818,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val limit = app.advancedSettings.current.lineTimeoutMs.toLong()
         val channel = activeChannel ?: return
         timeout = viewModelScope.launch(block = {
-            val health = PlaybackHealth(active, limit)
-            while (true) {
-                delay(minOf(1000L, limit.coerceAtLeast(1L)))
-                if (!ownsAttempt(current, active)) {
-                    return@launch
-                }
+            playbackSession.watchHealth(active = active, limit = limit, isCurrent = { ownsAttempt(current, active) }, sample = { health ->
                 val now = SystemClock.elapsedRealtime()
                 val counters = current.videoDecoderCounters
                 counters?.ensureUpdated()
@@ -846,9 +835,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 if (decision == PlaybackHealth.Decision.Fallback) {
                     nextLine(PlaybackFailure.Timeout)
-                    return@launch
-                }
-                if (decision == PlaybackHealth.Decision.RecordQuality) {
+                } else if (decision == PlaybackHealth.Decision.RecordQuality) {
                     val format = current.videoFormat
                     val size = current.videoSize
                     lineRanking.record(channel.id, active.address, LineQuality(
@@ -863,7 +850,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     ))
                     publishLineRanking()
                 }
-            }
+                decision
+            })
         })
     }
 

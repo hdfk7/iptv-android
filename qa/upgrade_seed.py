@@ -1,5 +1,10 @@
 """Prepare controlled subscription, favorites and history through the old App UI."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import io
 import os
 from pathlib import Path
@@ -7,7 +12,7 @@ import time
 
 from PIL import Image
 
-from release_ui import PACKAGE, bounds, find, focus_color_present, tv_highlight
+from release_ui import Device, PACKAGE, bounds, find, focus_color_present, tv_highlight, verify_release_apk
 
 
 SEED_NAME = "IPTV-QA-Upgrade-" + Path(os.environ.get("IPTV_QA_OUTPUT", "local")).name.rsplit("-", 1)[-1][:8]
@@ -51,8 +56,20 @@ def open_app(device):
         device.start()
 
 
+def add_device_arguments(parser):
+    parser.add_argument("--serial", required=True)
+    parser.add_argument("--device", choices=("phone", "tv"), required=True)
+
+
+def prepare_release_device(serial, device_type):
+    device = Device(serial, device_type)
+    entry, checksum = verify_release_apk(device)
+    open_app(device)
+    return device, entry, checksum
+
+
 def close_panels(device):
-    labels = ("刷新频道", "添加源", "关闭设置", "检查应用更新", "IP 地址",
+    labels = ("刷新频道", "添加源", "删除源", "关闭设置", "检查应用更新", "IP 地址",
               "播放列表地址", "恢复默认值", "网络连接超时", "网络读取超时",
               "播放超时后自动换线", "更新检查地址")
 
@@ -82,9 +99,14 @@ def action_row(root, title, action):
     row = find(root, title)
     if row is None:
         return None
-    row_top = bounds(row)[1]
-    buttons = [node for node in root.iter("node") if node.get("content-desc") == action]
-    matches = [node for node in buttons if abs(bounds(node)[1] - row_top) < 95]
+    _, row_top, _, row_bottom = bounds(row)
+    middle = (row_top + row_bottom) / 2
+    matches = []
+    for node in root.iter("node"):
+        if node.get("content-desc") == action:
+            _, top, _, bottom = bounds(node)
+            if top <= middle < bottom:
+                matches.append(node)
     return matches[0] if len(matches) == 1 else None
 
 
@@ -161,15 +183,21 @@ def source_row_action(device, title, action):
         for _ in range(12):
             root = device.tree()
             button = action_row(root, title, action)
-            if button is not None:
+            panel = next((node for node in root.iter("node") if node.get("scrollable") == "true"), None)
+            if button is not None and panel is None:
                 device.tap(button)
                 return
-            panel = next((node for node in root.iter("node") if node.get("scrollable") == "true"), None)
             if panel is None:
                 break
             left, top, right, bottom = bounds(panel)
+            if button is not None:
+                _, button_top, _, button_bottom = bounds(button)
+                if top <= button_top and button_bottom <= bottom:
+                    device.tap(button)
+                    return
             x = str((left + right) // 2)
-            device.input("swipe", x, str(bottom - 20), x, str(top + 20), "350")
+            start, end = (top + 20, bottom - 20) if button is not None and button_top < top else (bottom - 20, top + 20)
+            device.input("swipe", x, str(start), x, str(end), "350")
     raise AssertionError(f"Source action is not reachable: {title}: {action}")
 
 

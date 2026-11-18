@@ -1,17 +1,20 @@
 """Regress advanced settings and expose unreachable TV confirmation controls."""
+
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
-from release_ui import Device, find, QA_OUTPUT, verify_release_apk
-from upgrade_seed import close_panels, type_in_field, close_keyboard, open_app
+from release_ui import find, QA_OUTPUT
+from upgrade_seed import close_panels, type_in_field, close_keyboard, add_device_arguments, prepare_release_device
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--serial', required=True)
-    parser.add_argument('--device', choices=('phone', 'tv'), required=True)
+    add_device_arguments(parser)
     args = parser.parse_args()
-    d = Device(args.serial, args.device)
-    entry, checksum = verify_release_apk(d)
-    open_app(d)
+    d, entry, checksum = prepare_release_device(args.serial, args.device)
     tv = args.device == 'tv'
     down = 'KEYCODE_DPAD_DOWN'
     up = 'KEYCODE_DPAD_UP'

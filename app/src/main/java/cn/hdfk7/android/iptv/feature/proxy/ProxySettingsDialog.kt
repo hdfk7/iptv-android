@@ -1,5 +1,7 @@
 package cn.hdfk7.android.iptv.feature.proxy
 
+import cn.hdfk7.android.iptv.core.ui.components.DialogLayout
+import cn.hdfk7.android.iptv.core.ui.components.dialogSurface
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -8,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.OutlinedTextField
@@ -313,7 +314,7 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
             contentAlignment = if (television && imeVisible) Alignment.TopCenter else Alignment.Center,
             content = {
                 val panelHeight = if (television) {
-                    Modifier.padding(16.dp).heightIn(max = 480.dp)
+                    Modifier.padding(DialogLayout.Inset).heightIn(max = DialogLayout.MaxHeight)
                 } else {
                     val baseHeight = if (twoColumns) 298.dp else 400.dp
                     val errorSpace = when {
@@ -324,13 +325,13 @@ fun ProxySettingsDialog(store: ProxySettingsStore, onClose: () -> Unit, onSaved:
                     Modifier.verticalScroll(rememberScrollState()).padding(16.dp)
                         .height(baseHeight + errorSpace)
                 }
-                val innerPadding = 16.dp
+                val innerPadding = DialogLayout.Inset
                 val fieldsWidth = if (twoColumns) FormTwoColumnWidth else FormFieldWidth
-                val panelWidth = if (television) 560.dp else fieldsWidth + innerPadding * 2
-                val fieldsSurface = Modifier.fillMaxWidth().background(BackdropBottom, RoundedCornerShape(14.dp)).padding(8.dp)
+                val panelWidth = if (television) DialogLayout.StandardWidth else fieldsWidth + innerPadding * 2
+                val fieldsSurface = Modifier.fillMaxWidth().background(BackdropBottom, DialogLayout.GroupShape).padding(8.dp)
                 Column(
                     modifier = panelHeight.width(panelWidth).then(navigation)
-                        .background(DialogSurface, RoundedCornerShape(22.dp)).padding(innerPadding),
+                        .dialogSurface(),
                     verticalArrangement = Arrangement.spacedBy(if (television) 12.dp else 8.dp),
                     content = {
                         Row(verticalAlignment = Alignment.CenterVertically,

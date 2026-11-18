@@ -1,5 +1,10 @@
 """Check form layout on a device running the signed Release APK."""
 
+import sys
+
+# This entry also imports QA modules lazily when it runs device checks.
+sys.dont_write_bytecode = True
+
 import argparse
 import hashlib
 import io

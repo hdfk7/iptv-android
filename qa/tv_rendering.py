@@ -1,5 +1,10 @@
 """Verify both rendering modes using the signed APK and TV remote navigation."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 

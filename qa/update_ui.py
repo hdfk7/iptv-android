@@ -1,21 +1,23 @@
 """Check update UI and download cancellation without opening the installer."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 import time
 
-from release_ui import Device, QA_OUTPUT, bounds, find, verify_release_apk
-from upgrade_seed import close_panels, open_app
+from release_ui import QA_OUTPUT, bounds, find
+from upgrade_seed import close_panels, add_device_arguments, prepare_release_device
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True)
-    parser.add_argument("--device", choices=("phone", "tv"), required=True)
+    add_device_arguments(parser)
     args = parser.parse_args()
-    device = Device(args.serial, args.device)
-    _, checksum = verify_release_apk(device)
-    open_app(device)
+    device, _, checksum = prepare_release_device(args.serial, args.device)
     results = {"sha256": checksum, "passedSteps": [], "notExecuted": ["system installation"]}
 
     def open_update():

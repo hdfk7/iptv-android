@@ -1,24 +1,26 @@
 """Exercise source CRUD through UI with a unique temporary subscription."""
 
+import sys
+
+# Set this before importing QA modules, including when run without -B.
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 import time
 
-from release_ui import Device, QA_OUTPUT, tv_highlight, verify_release_apk
+from release_ui import QA_OUTPUT, tv_highlight
 from upgrade_seed import (add_source, close_keyboard, close_panels, source_action,
-                          source_row_action, type_in_field, open_app)
+                          source_row_action, type_in_field, add_device_arguments, prepare_release_device)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", required=True)
-    parser.add_argument("--device", choices=("phone", "tv"), required=True)
+    add_device_arguments(parser)
     parser.add_argument("--origin", default="http://qa-iptv.test",
                         help="Use the QA proxy host while the App proxy is enabled")
     args = parser.parse_args()
-    device = Device(args.serial, args.device)
-    verify_release_apk(device)
-    open_app(device)
+    device, _, _ = prepare_release_device(args.serial, args.device)
     television = args.device == "tv"
     name = f"IPTV-QA-CRUD-{time.time_ns()}"
     renamed = name + "-Edited"

@@ -1,10 +1,11 @@
 package cn.hdfk7.android.iptv.feature.player
 
+import cn.hdfk7.android.iptv.core.ui.components.DialogLayout
+import cn.hdfk7.android.iptv.core.ui.components.dialogSurface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -44,7 +45,6 @@ import cn.hdfk7.android.iptv.core.model.parseTimeoutSeconds
 import cn.hdfk7.android.iptv.core.ui.components.DialogTitle
 import cn.hdfk7.android.iptv.core.ui.components.TvAction
 import cn.hdfk7.android.iptv.core.ui.components.tvDirections
-import cn.hdfk7.android.iptv.core.ui.theme.DialogSurface
 import cn.hdfk7.android.iptv.core.ui.components.tvPanelNavigation
 import cn.hdfk7.android.iptv.core.ui.theme.ButtonPanel
 import cn.hdfk7.android.iptv.core.ui.theme.Panel
@@ -107,7 +107,7 @@ internal fun AdvancedSettingsDialog(store: AdvancedSettingsStore, television: Bo
         if (!saving) {
             onClose()
         }
-    }, width = 560.dp, content = {
+    }, width = DialogLayout.StandardWidth, content = {
         val navigation = tvPanelNavigation(television && editing == null, onMove = { horizontal, vertical ->
             val actionsStart = ConfigControl.Defaults.ordinal
             val next = when {
@@ -204,9 +204,8 @@ private fun SettingsPanel(
     content: @Composable ColumnScope.() -> Unit
 ): Unit {
     Column(
-        modifier = Modifier.fillMaxWidth().background(DialogSurface, RoundedCornerShape(22.dp))
-            .then(navigation).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().dialogSurface(contentModifier = navigation),
+        verticalArrangement = Arrangement.spacedBy(DialogLayout.Spacing),
         content = {
             DialogTitle(text = stringResource(title))
             content()
